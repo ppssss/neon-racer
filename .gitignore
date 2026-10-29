@@ -1,0 +1,15 @@
+# raw car models (hundreds of MB of .rar/.obj/.fbx/.c4d) - only the optimised
+# glb under assets/car/ is needed to play
+assets/car/source/
+
+# one-off model conversion workspace
+tools/_conv/
+node_modules/
+
+# local scratch
+.screenshots/
+.workbuddy/
+.trae-html-share-packages/
+*.log
+.DS_Store
+Thumbs.db
