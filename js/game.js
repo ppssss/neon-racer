@@ -132,15 +132,19 @@
       this.messageTimer = 0;
       this.goTimer = 0;
       this.resultTimer = 0;
-      this.shake = 0;
+      this.shakeP = [0, 0];
       this.smokeTimer = 0;
       this.pausedFrom = 'racing';
       this.steer = 0;
-      this.input = {
+      const blankInput = () => ({
         gas: false, brake: false, left: false, right: false,
         drift: false, boost: false
-      };
-      this.touch = { left: false, right: false, gas: false, brake: false, drift: false, boost: false };
+      });
+      this.input = blankInput();       // player 1 (keyboard + pad 1)
+      this.input2 = blankInput();      // player 2 (only used in split screen)
+      this.touch = blankInput();
+      this.steerP = [0, 0];
+      this.players = [];
       this.record = this.loadRecord();
       this.setup = this.loadSetup();
 
@@ -190,20 +194,43 @@
       this.camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, .08, 900);
       this.camera.rotation.order = 'YXZ';
       this.scene.add(this.camera);
+      this.cam1 = this.camera;
+      // second eye for split screen; parked until the mode is switched on
+      this.cam2 = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, .08, 900);
+      this.cam2.rotation.order = 'YXZ';
+      this.cam2.position.set(10, 4, 10);
+      this.scene.add(this.cam2);
       this.lookAt = new V3(0, 1, 0);
+      this.lookAt2 = new V3(0, 1, 0);
       this.camera.position.set(10, 4, 10);
+      // both eyes share one shadow map, refreshed once per frame
+      this.renderer.shadowMap.autoUpdate = false;
     }
 
     createRacers() {
       const D = NR.CAR_DATA;
-      const others = NR.CAR_ORDER.filter(id => id !== this.setup.car);
-      // a custom paint job only ever applies to the player's machine
-      const playerBase = D[this.setup.car];
+      const dual = this.setup.mode === '2p';
+      const car1 = this.setup.car;
+      // P2 never drives the exact machine P1 picked - that would be unreadable
+      let car2 = this.setup.car2;
+      if (!D[car2] || car2 === car1) car2 = NR.CAR_ORDER.find(id => id !== car1) || car1;
+      this.setup.car2 = car2;
+      // a custom paint job only ever applies to the first player's machine
+      const playerBase = D[car1];
       const playerData = this.setup.paint
         ? Object.assign({}, playerBase, { color: parseInt(this.setup.paint.slice(1), 16) })
         : playerBase;
       this.player = new NR.Racer(this, playerData, true, { skill: 1 });
-      // two cars per row, the player always starts from the last one
+      this.player.playerIndex = 0;
+      this.players = [this.player];
+      if (dual) {
+        const p2 = new NR.Racer(this, D[car2], true, { skill: 1 });
+        p2.playerIndex = 1;
+        this.players.push(p2);
+      }
+      const taken = new Set([car1, dual ? car2 : null]);
+      const others = NR.CAR_ORDER.filter(id => !taken.has(id));
+      // two cars per row, the humans always start from the last one
       const ROW = 6.5;
       const configs = others.map((id, i) => ({
         id,
@@ -218,10 +245,22 @@
         r.ai = new NR.AIDriver(r, { lane: c.lane, skill: c.skill, phase: c.phase });
         return r;
       });
-      this.racers = [this.player, ...this.opponents];
+      this.racers = [...this.players, ...this.opponents];
       this.grid = configs.map((c, i) => ({ racer: this.opponents[i], s: c.s, lat: c.lat }));
-      this.grid.push({ racer: this.player, s: -7 - ROW * Math.ceil(others.length / 2), lat: 3.5 });
+      const backS = -7 - ROW * Math.ceil(others.length / 2);
+      this.players.forEach((p, i) => {
+        this.grid.push({ racer: p, s: backS, lat: i === 0 ? 3.5 : -3.5 });
+      });
     }
+
+    /* is the screen currently split in two? */
+    splitActive() {
+      return this.setup.mode === '2p' && this.players.length > 1 &&
+        this.state !== 'menu' && this.state !== 'results';
+    }
+
+    camOf(slot) { return slot === 1 ? this.cam2 : this.cam1; }
+    lookOf(slot) { return slot === 1 ? this.lookAt2 : this.lookAt; }
 
     rebuildRacers() {
       for (const r of this.racers) {
@@ -266,6 +305,25 @@
       this.snapCamera = true;
     }
 
+    selectMode(mode) {
+      if (this.setup.mode === mode) return;
+      this.setup.mode = mode;
+      this.saveSetup();
+      document.body.classList.toggle('mode-2p', mode === '2p');
+      this.rebuildRacers();
+      this.updateSetupUI();
+      this.snapCamera = true;
+    }
+
+    selectCar2(id) {
+      if (id === this.setup.car2 || id === this.setup.car) return;
+      this.setup.car2 = id;
+      this.saveSetup();
+      this.rebuildRacers();
+      this.updateSetupUI();
+      this.snapCamera = true;
+    }
+
     /* ---- custom paint ---------------------------------------------------- */
     carPaintColor() {
       return this.setup.paint || cssColor(NR.CAR_DATA[this.setup.car].color);
@@ -294,11 +352,16 @@
     }
 
     loadSetup() {
-      const setup = { track: NR.TRACKS[0].id, car: NR.CAR_ORDER[0], paint: null };
+      const setup = {
+        track: NR.TRACKS[0].id, car: NR.CAR_ORDER[0],
+        car2: NR.CAR_ORDER[1], mode: '1p', paint: null
+      };
       try {
         const saved = JSON.parse(localStorage.getItem('neonRidgeSetup') || '{}');
         if (NR.TRACKS.some(t => t.id === saved.track)) setup.track = saved.track;
         if (NR.CAR_ORDER.includes(saved.car)) setup.car = saved.car;
+        if (NR.CAR_ORDER.includes(saved.car2)) setup.car2 = saved.car2;
+        if (saved.mode === '2p') setup.mode = '2p';
         if (typeof saved.paint === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint)) {
           setup.paint = saved.paint.toLowerCase();
         }

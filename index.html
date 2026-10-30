@@ -108,6 +108,31 @@
   <div id="startFlash" class="start-flash"></div>
 </div>
 
+<!-- ======================= SPLIT HUD (2 PLAYERS) ===================== -->
+<div id="hud2" class="hud2 hidden">
+  <div class="p2p-panel" data-p="0">
+    <span class="p2p-tag">P1</span>
+    <div class="p2p-pos"><b data-f="pos">1</b><i>/<span data-f="field">8</span></i></div>
+    <div class="p2p-lap">LAP <b data-f="lap">1</b><i>/3</i></div>
+    <div class="p2p-time" data-f="time">00:00.000</div>
+    <div class="p2p-speed"><b data-f="speed">000</b><small>KM/H</small></div>
+    <div class="p2p-nitro"><i data-f="nitro"></i></div>
+    <div class="p2p-warn" data-f="warn">逆行 · WRONG WAY</div>
+    <canvas class="p2p-map" width="132" height="132" data-f="map"></canvas>
+  </div>
+  <div class="p2p-panel" data-p="1">
+    <span class="p2p-tag alt">P2</span>
+    <div class="p2p-pos"><b data-f="pos">1</b><i>/<span data-f="field">8</span></i></div>
+    <div class="p2p-lap">LAP <b data-f="lap">1</b><i>/3</i></div>
+    <div class="p2p-time" data-f="time">00:00.000</div>
+    <div class="p2p-speed"><b data-f="speed">000</b><small>KM/H</small></div>
+    <div class="p2p-nitro"><i data-f="nitro"></i></div>
+    <div class="p2p-warn" data-f="warn">逆行 · WRONG WAY</div>
+    <canvas class="p2p-map" width="132" height="132" data-f="map"></canvas>
+  </div>
+  <div class="p2p-split"></div>
+</div>
+
 <!-- ============================== MENU ============================== -->
 <div id="menu" class="screen menu-screen">
   <div class="menu-vignette"></div>
@@ -128,6 +153,13 @@
 
     <div class="race-setup">
       <div class="setup-group">
+        <div class="setup-head"><span>MODE · 模式</span><b id="setupMode">单人挑战</b></div>
+        <div class="mode-row" id="modeRow">
+          <button class="mode-btn on" type="button" data-mode="1p">单人挑战<em>SOLO</em></button>
+          <button class="mode-btn" type="button" data-mode="2p">双人分屏<em>SPLIT</em></button>
+        </div>
+      </div>
+      <div class="setup-group">
         <div class="setup-head"><span>CIRCUIT · 赛道</span><b id="setupTrack">NEON RIDGE</b></div>
         <div class="option-row" id="trackOptions"></div>
       </div>
@@ -142,6 +174,14 @@
           </span>
           <span class="garage-cta">更换赛车 / 车漆 <i>→</i></span>
         </a>
+      </div>
+      <div class="setup-group p2-group" id="p2Group">
+        <div class="setup-head"><span>P2 · 赛车</span><b id="setupCar2">R8 V10</b></div>
+        <div class="option-row" id="carOptions2"></div>
+        <div class="p2-keys">
+          <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 驾驶
+          <kbd>ENTER</kbd> 漂移 <kbd>R SHIFT</kbd> 氮气 <kbd>BACKSPACE</kbd> 复位
+        </div>
       </div>
     </div>
 
@@ -213,6 +253,8 @@
       <div class="result-stat"><span class="micro">TOP SPEED</span><strong><span id="resultSpeed">0</span><em>KM/H</em></strong></div>
       <div class="result-stat"><span class="micro">DRIFT CHARGE</span><strong><span id="resultDrift">0</span><em>M</em></strong></div>
     </div>
+
+    <div class="result-dual hidden" id="resultDual"></div>
 
     <div class="result-table" id="resultTable"></div>
 
