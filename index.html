@@ -152,11 +152,15 @@
     </div>
 
     <div class="race-setup">
-      <div class="setup-group">
-        <div class="setup-head"><span>MODE · 模式</span><b id="setupMode">单人挑战</b></div>
+      <div class="setup-group mode-group">
         <div class="mode-row" id="modeRow">
+          <span class="mode-label">模式</span>
           <button class="mode-btn on" type="button" data-mode="1p">单人挑战<em>SOLO</em></button>
           <button class="mode-btn" type="button" data-mode="2p">双人分屏<em>SPLIT</em></button>
+          <span class="mode-label diff-label">难度</span>
+          <button class="mode-btn diff-btn" type="button" data-diff="easy">轻松<em>EASY</em></button>
+          <button class="mode-btn diff-btn on" type="button" data-diff="normal">标准<em>NORMAL</em></button>
+          <button class="mode-btn diff-btn" type="button" data-diff="hard">困难<em>HARD</em></button>
         </div>
       </div>
       <div class="setup-group">
@@ -178,10 +182,7 @@
       <div class="setup-group p2-group" id="p2Group">
         <div class="setup-head"><span>P2 · 赛车</span><b id="setupCar2">R8 V10</b></div>
         <div class="option-row" id="carOptions2"></div>
-        <div class="p2-keys">
-          <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 驾驶
-          <kbd>ENTER</kbd> 漂移 <kbd>R SHIFT</kbd> 氮气 <kbd>BACKSPACE</kbd> 复位
-        </div>
+        <div class="p2-keys"><b>P2</b> ↑↓←→ 驾驶 · ENTER 漂移 · 右 SHIFT 氮气 · BACKSPACE 复位</div>
       </div>
     </div>
 

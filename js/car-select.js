@@ -19,6 +19,9 @@
       if (typeof saved.track === 'string') setup.track = saved.track;
       if (NR.CAR_ORDER.includes(saved.car)) setup.car = saved.car;
       if (typeof saved.paint === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint)) setup.paint = saved.paint.toLowerCase();
+      // fields this page does not own, but must not wipe on save
+      if (saved.mode === '2p') setup.mode = '2p';
+      if (NR.CAR_ORDER.includes(saved.car2)) setup.car2 = saved.car2;
     } catch (e) { /* noop */ }
     return setup;
   }

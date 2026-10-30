@@ -26,6 +26,9 @@
     return `${m ? m + ':' : ''}${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   };
   const cssColor = (n) => '#' + n.toString(16).padStart(6, '0');
+  const EMPTY_TOUCH = Object.freeze({
+    left: false, right: false, gas: false, brake: false, drift: false, boost: false
+  });
 
   /* ---------------------------------------------------------------------- */
   class ParticleField {
@@ -129,11 +132,12 @@
       this.last = performance.now();
       this.finishedOrder = [];
       this.lastLapCount = 0;
+      this.lastLapCountP = [0, 0];
       this.messageTimer = 0;
       this.goTimer = 0;
       this.resultTimer = 0;
       this.shakeP = [0, 0];
-      this.smokeTimer = 0;
+      this.smokeTimerP = [0, 0];
       this.pausedFrom = 'racing';
       this.steer = 0;
       const blankInput = () => ({
@@ -144,6 +148,7 @@
       this.input2 = blankInput();      // player 2 (only used in split screen)
       this.touch = blankInput();
       this.steerP = [0, 0];
+      this.snapP = [true, true];   // one "cut, do not glide" flag per eye
       this.players = [];
       this.record = this.loadRecord();
       this.setup = this.loadSetup();
@@ -207,8 +212,14 @@
       this.renderer.shadowMap.autoUpdate = false;
     }
 
+    /* the difficulty preset the field is tuned to */
+    diffCfg() {
+      return NR.DIFFICULTY[this.setup.difficulty] || NR.DIFFICULTY.normal;
+    }
+
     createRacers() {
       const D = NR.CAR_DATA;
+      const diff = this.diffCfg();
       const dual = this.setup.mode === '2p';
       const car1 = this.setup.car;
       // P2 never drives the exact machine P1 picked - that would be unreadable
@@ -237,12 +248,16 @@
         s: -7 - ROW * Math.floor(i / 2),
         lat: i % 2 ? 3.5 : -3.5,
         lane: i % 2 ? 2.8 : -2.8,
-        skill: 1.02 - i * 0.014,
+        skill: 1.02 - i * diff.spread,
         phase: 1.3 + i * 1.7
       }));
       this.opponents = configs.map(c => {
         const r = new NR.Racer(this, D[c.id], false, { skill: c.skill });
-        r.ai = new NR.AIDriver(r, { lane: c.lane, skill: c.skill, phase: c.phase });
+        // difficulty scales the machine itself, not just how bravely it is
+        // driven - otherwise "hard" only means "brakes later"
+        r.maxSpeed *= diff.pace;
+        r.accel *= diff.pace;
+        r.ai = new NR.AIDriver(r, { lane: c.lane, skill: c.skill, phase: c.phase, diff });
         return r;
       });
       this.racers = [...this.players, ...this.opponents];
@@ -260,6 +275,8 @@
     }
 
     camOf(slot) { return slot === 1 ? this.cam2 : this.cam1; }
+    // jump both cameras to their target instead of gliding there
+    snap() { this.snapCamera = true; this.snapP[0] = this.snapP[1] = true; }
     lookOf(slot) { return slot === 1 ? this.lookAt2 : this.lookAt; }
 
     rebuildRacers() {
@@ -283,7 +300,7 @@
       this.track = new NR.Track(this.scene, this.renderer, cfg);
       this.buildMinimapBase();
       this.racers.forEach(r => { r.track = this.track; });
-      this.snapCamera = true;
+      this.snap();
     }
 
     selectTrack(id) {
@@ -302,7 +319,16 @@
       this.saveSetup();
       this.rebuildRacers();
       this.updateSetupUI();
-      this.snapCamera = true;
+      this.snap();
+    }
+
+    selectDifficulty(id) {
+      if (this.setup.difficulty === id || !NR.DIFFICULTY[id]) return;
+      this.setup.difficulty = id;
+      this.saveSetup();
+      this.rebuildRacers();
+      this.updateSetupUI();
+      this.snap();
     }
 
     selectMode(mode) {
@@ -312,7 +338,7 @@
       document.body.classList.toggle('mode-2p', mode === '2p');
       this.rebuildRacers();
       this.updateSetupUI();
-      this.snapCamera = true;
+      this.snap();
     }
 
     selectCar2(id) {
@@ -321,7 +347,7 @@
       this.saveSetup();
       this.rebuildRacers();
       this.updateSetupUI();
-      this.snapCamera = true;
+      this.snap();
     }
 
     /* ---- custom paint ---------------------------------------------------- */
@@ -354,7 +380,7 @@
     loadSetup() {
       const setup = {
         track: NR.TRACKS[0].id, car: NR.CAR_ORDER[0],
-        car2: NR.CAR_ORDER[1], mode: '1p', paint: null
+        car2: NR.CAR_ORDER[1], mode: '1p', difficulty: 'normal', paint: null
       };
       try {
         const saved = JSON.parse(localStorage.getItem('neonRidgeSetup') || '{}');
@@ -362,6 +388,7 @@
         if (NR.CAR_ORDER.includes(saved.car)) setup.car = saved.car;
         if (NR.CAR_ORDER.includes(saved.car2)) setup.car2 = saved.car2;
         if (saved.mode === '2p') setup.mode = '2p';
+        if (NR.DIFFICULTY[saved.difficulty]) setup.difficulty = saved.difficulty;
         if (typeof saved.paint === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint)) {
           setup.paint = saved.paint.toLowerCase();
         }
@@ -396,11 +423,70 @@
       const garage = $('garageLink');
       if (garage) garage.addEventListener('click', () => this.audio.ui());
 
+      // solo / split-screen switch
+      if (this.ui.modeRow) {
+        this.ui.modeRow.querySelectorAll('[data-mode]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            this.audio.ui();
+            this.selectMode(btn.dataset.mode);
+          });
+        });
+        this.ui.modeRow.querySelectorAll('[data-diff]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            this.audio.ui();
+            this.selectDifficulty(btn.dataset.diff);
+          });
+        });
+      }
+
+      // P2 drives anything that is not already taken by P1
+      const p2Wrap = this.ui.carOptions2;
+      if (p2Wrap) {
+        p2Wrap.innerHTML = '';
+        this.carCards2 = [];
+        for (const id of NR.CAR_ORDER) {
+          const car = NR.CAR_DATA[id];
+          const hex = cssColor(car.color);
+          const btn = document.createElement('button');
+          btn.className = 'p2-card';
+          btn.type = 'button';
+          btn.innerHTML = `<i style="background:${hex}"></i><span>${car.name}</span>`;
+          btn.addEventListener('click', () => {
+            this.audio.ui();
+            this.selectCar2(id);
+          });
+          p2Wrap.appendChild(btn);
+          this.carCards2.push({ id, el: btn });
+        }
+      }
+
       this.updateSetupUI();
     }
 
     updateSetupUI() {
       for (const c of this.trackCards) c.el.classList.toggle('on', c.id === this.setup.track);
+      const dual = this.setup.mode === '2p';
+      document.body.classList.toggle('mode-2p', dual);
+      if (this.ui.modeRow) {
+        this.ui.modeRow.querySelectorAll('[data-mode]').forEach(btn => {
+          btn.classList.toggle('on', btn.dataset.mode === (dual ? '2p' : '1p'));
+        });
+        this.ui.modeRow.querySelectorAll('[data-diff]').forEach(btn => {
+          btn.classList.toggle('on', btn.dataset.diff === this.setup.difficulty);
+        });
+      }
+      if (this.ui.setupMode) this.ui.setupMode.textContent = dual ? '双人分屏' : '单人挑战';
+      if (this.carCards2) {
+        for (const c of this.carCards2) {
+          c.el.classList.toggle('on', c.id === this.setup.car2);
+          c.el.disabled = c.id === this.setup.car;   // P1 already has it
+          c.el.style.opacity = c.id === this.setup.car ? '.32' : '';
+        }
+      }
+      if (this.ui.setupCar2) {
+        const c2 = NR.CAR_DATA[this.setup.car2];
+        this.ui.setupCar2.textContent = c2 ? c2.name : '--';
+      }
 
       const cfg = this.trackCfg(this.setup.track);
       const car = NR.CAR_DATA[this.setup.car];
@@ -472,10 +558,17 @@
     }
 
     createSpeedLines() {
+      this.speedLinesAll = [this.cam1, this.cam2].map(cam => this.buildSpeedLines(cam));
+      this.speedLines = this.speedLinesAll[0].lines;
+      this.speedLineData = this.speedLinesAll[0].data;
+      this.speedLinePos = this.speedLinesAll[0].pos;
+    }
+
+    buildSpeedLines(cam) {
       const count = 90;
       const pos = new Float32Array(count * 6);
       const col = new Float32Array(count * 6);
-      this.speedLineData = [];
+      const data = [];
       const c = new THREE.Color();
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
@@ -484,7 +577,7 @@
         const y = Math.sin(angle) * rad * .55;
         const z = -6 - Math.random() * 70;
         const len = 1.2 + Math.random() * 4.2;
-        this.speedLineData.push({ x, y, z, len });
+        data.push({ x, y, z, len });
         c.setHex(i % 3 === 0 ? 0xff2d8d : 0x9af7ff);
         for (let k = 0; k < 2; k++) {
           pos[i * 6 + k * 3] = x;
@@ -502,11 +595,11 @@
         vertexColors: true, transparent: true, opacity: 0,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
       });
-      this.speedLines = new THREE.LineSegments(geo, mat);
-      this.speedLines.frustumCulled = false;
-      this.speedLines.renderOrder = 20;
-      this.camera.add(this.speedLines);
-      this.speedLinePos = pos;
+      const lines = new THREE.LineSegments(geo, mat);
+      lines.frustumCulled = false;
+      lines.renderOrder = 20;
+      cam.add(lines);
+      return { lines, data, pos };
     }
 
     /* ---- UI cache ------------------------------------------------------- */
@@ -519,10 +612,21 @@
         'resultTitle', 'resultSub', 'resultPlace', 'resultKicker', 'resultTime', 'resultBest',
         'resultSpeed', 'resultDrift', 'resultTable', 'menuBest', 'startFlash', 'muteBtn',
         'touchControls', 'startBtn', 'pauseBtn', 'muteBtn', 'resumeBtn', 'restartBtn',
-        'quitBtn', 'againBtn', 'menuBtn', 'pause', 'menu', 'paintPick', 'paintReset'
+        'quitBtn', 'againBtn', 'menuBtn', 'pause', 'menu', 'paintPick', 'paintReset',
+        'hud2', 'resultDual', 'modeRow', 'setupMode', 'setupCar2', 'carOptions2', 'p2Group'
       ];
       this.ui = {};
       ids.forEach(id => { if (!this.ui[id]) this.ui[id] = $(id); });
+      // the split HUD keeps two identical panels; grab their fields once
+      this.p2panels = Array.prototype.map.call(
+        document.querySelectorAll('#hud2 .p2p-panel'),
+        (panel) => {
+          const f = {};
+          panel.querySelectorAll('[data-f]').forEach(el => { f[el.dataset.f] = el; });
+          f.ctx = f.map.getContext('2d');
+          return { el: panel, f };
+        }
+      );
       this.ui.fieldSize.textContent = this.racers.length;
       this.ui.standingsList.innerHTML = '';
       this.buildMinimapBase();
@@ -596,15 +700,28 @@
     }
 
     bindInput() {
-      const map = {
-        KeyW: 'gas', ArrowUp: 'gas', KeyS: 'brake', ArrowDown: 'brake',
-        KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-        Space: 'drift', ShiftLeft: 'boost', ShiftRight: 'boost'
+      // P1 keeps the classic layout. In split screen the arrows, Enter and
+      // right shift move over to P2; in solo the arrows stay a second set of
+      // keys for P1 so nothing changes for existing players.
+      const mapP1 = {
+        KeyW: 'gas', KeyS: 'brake', KeyA: 'left', KeyD: 'right',
+        Space: 'drift', ShiftLeft: 'boost'
       };
+      const mapP2 = {
+        ArrowUp: 'gas', ArrowDown: 'brake', ArrowLeft: 'left', ArrowRight: 'right',
+        Enter: 'drift', Numpad0: 'drift', ShiftRight: 'boost'
+      };
+      const dual = () => this.setup.mode === '2p';
+      // when the screen is split, P2 keys must not also drive P1
+      const sink = (code) => (dual() && this.modeKeysP2(code) ? this.input2 : this.input);
       window.addEventListener('keydown', (e) => {
-        if (e.code in map) {
-          this.input[map[e.code]] = true;
-          if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+        if (e.code in mapP1) {
+          this.input[mapP1[e.code]] = true;
+          if (e.code === 'Space') e.preventDefault();
+        }
+        if (e.code in mapP2) {
+          sink(e.code)[mapP2[e.code]] = true;
+          if (e.code.indexOf('Arrow') === 0 || (dual() && e.code === 'Enter')) e.preventDefault();
         }
         if (e.repeat) return;
         if (e.code === 'Escape') {
@@ -613,17 +730,31 @@
         }
         if (e.code === 'KeyM') this.toggleMute();
         if (e.code === 'KeyR' && this.state === 'racing') {
-          this.player.resetToTrack();
+          this.players[0].resetToTrack();
           this.showMessage('已复位 · RESET');
           this.audio.ui();
-          this.snapCamera = true;
+          this.snap();
+        }
+        if (e.code === 'Backspace' && dual() && this.state === 'racing') {
+          e.preventDefault();
+          if (this.players[1]) {
+            this.players[1].resetToTrack();
+            this.showMessage('P2 复位 · RESET', 1.6);
+            this.audio.ui();
+            this.snap();
+          }
         }
         if (e.code === 'Enter' && this.state === 'menu') {
           this.audio.init(); this.startRace();
         }
       });
       window.addEventListener('keyup', (e) => {
-        if (e.code in map) this.input[map[e.code]] = false;
+        if (e.code in mapP1) this.input[mapP1[e.code]] = false;
+        if (e.code in mapP2) {
+          // release whoever owns the key right now; startRace / mode switch
+          // both call clearInput(), so a mid-press mode change cannot stick
+          (dual() ? this.input2 : this.input)[mapP2[e.code]] = false;
+        }
       });
       window.addEventListener('blur', () => {
         this.clearInput();
@@ -634,22 +765,40 @@
       });
       document.addEventListener('contextmenu', (e) => e.preventDefault());
       window.addEventListener('resize', () => {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const w = window.innerWidth, h = window.innerHeight;
+        this.renderer.setSize(w, h);
+        // renderScene re-fits each eye to its viewport every frame
+        this.cam1.aspect = w / h;
+        this.cam1.updateProjectionMatrix();
+        this.cam2.aspect = w / h;
+        this.cam2.updateProjectionMatrix();
       });
+    }
+
+    // keys that belong to P2 while the screen is split
+    modeKeysP2(code) {
+      return code === 'Enter' || code === 'Numpad0' || code === 'ShiftRight' ||
+        code.indexOf('Arrow') === 0;
     }
 
     clearInput() {
       for (const k in this.input) this.input[k] = false;
+      for (const k in this.input2) this.input2[k] = false;
       for (const k in this.touch) this.touch[k] = false;
+      this.steerP[0] = this.steerP[1] = 0;
+      this.steer = 0;
     }
 
-    readGamepad() {
+    readGamepad(slot) {
       if (!navigator.getGamepads) return null;
-      const pads = navigator.getGamepads();
-      for (const p of pads) {
-        if (!p || !p.connected) continue;
+      const pads = [];
+      for (const p of navigator.getGamepads()) if (p && p.connected) pads.push(p);
+      if (!pads.length) return null;
+      // split screen: each human owns one pad and they never cross over.
+      // solo: whichever pad is being touched drives the only car.
+      const dual = this.setup.mode === '2p';
+      const candidates = dual ? (pads[slot] ? [pads[slot]] : []) : pads;
+      for (const p of candidates) {
         const steer = Math.abs(p.axes[0] || 0) > .14 ? (p.axes[0] || 0) : 0;
         const gas = p.buttons[7] ? p.buttons[7].value : 0;
         const brake = p.buttons[6] ? p.buttons[6].value : 0;
@@ -666,24 +815,29 @@
       return null;
     }
 
-    getControls(dt) {
-      const gp = this.readGamepad();
+    getControls(dt, slot) {
+      slot = slot || 0;
+      const gp = this.readGamepad(slot);
+      const keys = slot === 1 ? this.input2 : this.input;
+      const touch = slot === 1 ? EMPTY_TOUCH : this.touch;
       // Internal steering is positive toward the car's +X side, which appears
       // left on screen with our behind-the-car camera. Invert player input so
       // A / left-stick-left turns screen-left and D / stick-right turns right.
-      let steerInput = (this.input.left || this.touch.left ? 1 : 0) - (this.input.right || this.touch.right ? 1 : 0);
+      let steerInput = (keys.left || touch.left ? 1 : 0) - (keys.right || touch.right ? 1 : 0);
       if (gp && gp.steer) steerInput = -gp.steer;
-      this.steer = damp(this.steer, steerInput, 11, dt);
-      if (Math.abs(this.steer) < .015) this.steer = 0;
-      const throttle = gp && gp.gas > .05 ? gp.gas : ((this.input.gas || this.touch.gas) ? 1 : 0);
-      const brake = gp && gp.brake > .05 ? gp.brake : ((this.input.brake || this.touch.brake) ? 1 : 0);
-      this.lastThrottle = throttle;
+      let steer = damp(this.steerP[slot], steerInput, 11, dt);
+      if (Math.abs(steer) < .015) steer = 0;
+      this.steerP[slot] = steer;
+      if (slot === 0) this.steer = steer;
+      const throttle = gp && gp.gas > .05 ? gp.gas : ((keys.gas || touch.gas) ? 1 : 0);
+      const brake = gp && gp.brake > .05 ? gp.brake : ((keys.brake || touch.brake) ? 1 : 0);
+      if (slot === 0) this.lastThrottle = throttle;
       return {
         throttle,
         brake,
-        steer: this.steer,
-        drift: !!(this.input.drift || this.touch.drift || (gp && gp.drift)),
-        boost: !!(this.input.boost || this.touch.boost || (gp && gp.boost))
+        steer,
+        drift: !!(keys.drift || touch.drift || (gp && gp.drift)),
+        boost: !!(keys.boost || touch.boost || (gp && gp.boost))
       };
     }
 
@@ -693,15 +847,16 @@
       this.clearInput();
       this.steer = 0;
       this.lastThrottle = 0;
+      this.steerP[0] = this.steerP[1] = 0;
       this.finishedOrder = [];
       this.lastLapCount = 0;
+      this.lastLapCountP = [0, 0];
       this.messageTimer = 0;
       this.raceTime = 0;
       this.acc = 0;
       this.goTimer = 0;
       this.resultTimer = 0;
-      this.shake = 0;
-      this.smokeTimer = 0;
+      this.shakeP[0] = this.shakeP[1] = 0;
       this.state = 'countdown';
       this.countdownT = 3.0;
       this.countdownLast = 3;
@@ -713,21 +868,31 @@
       this.ui.countdown.classList.remove('hidden');
       this.ui.touchControls.classList.add('active');
       document.body.classList.add('racing');
+      const dual = this.setup.mode === '2p' && this.players.length > 1;
+      document.body.classList.toggle('dual', dual);
+      this.ui.hud2.classList.toggle('hidden', !dual);
+      this.ui.fieldSize.textContent = this.racers.length;
+      for (const panel of (this.p2panels || [])) {
+        panel.f.field.textContent = this.racers.length;
+        panel.f.lap.parentNode.querySelector('i').textContent = '/' + this.track.lapCount;
+      }
       try { this.canvas.focus({ preventScroll: true }); } catch (e) { this.canvas.focus(); }
       this.ui.startFlash.classList.remove('on');
       this.ui.raceMessage.textContent = '';
       this.ui.wrongWay.classList.remove('on');
       this.ui.driftBadge.classList.remove('on');
       this.resetGrid();
-      this.player.nitro = 100;
+      this.players.forEach(p => { p.nitro = p.nitroMax; });
       this.showCountdown('3');
       this.audio.startEngine();
       this.audio.setPaused(false);
       this.audio.countdown(3);
       this.track.setStartLights(1, false);
       if (this.speedLines) this.speedLines.material.opacity = 0;
-      this.showMessage(`${this.track.lapCount} 圈 · ${this.racers.length} 位车手`, 3);
+      this.showMessage(`${this.track.lapCount} 圈 · ${this.racers.length} 位车手 · ${this.diffCfg().name}难度`, 3);
       this.snapCamera = !fromMenu;
+      this.snapP[0] = !fromMenu;
+      this.snapP[1] = true;      // the second eye has no previous framing
       this.menuTime = 0;
       this.updateStandings(true);
     }
@@ -754,11 +919,13 @@
           g.racer.ai.boost = false;
         }
       }
-      this.player.finished = false;
-      this.player.finishPlace = 0;
-      this.player.finishTime = 0;
+      for (const p of this.players) {
+        p.finished = false;
+        p.finishPlace = 0;
+        p.finishTime = 0;
+      }
       this.placeState = 4;
-      this.snapCamera = true;
+      this.snap();
     }
 
     resetToMenu(initial) {
@@ -770,7 +937,9 @@
         g.racer.placeOnGrid(g.s < 0 ? this.track.total + g.s : g.s, g.lat);
         g.racer.model.visible = true;
       }
-      this.player.finished = false;
+      for (const p of this.players) p.finished = false;
+      document.body.classList.remove('dual');
+      this.ui.hud2.classList.add('hidden');
       this.ui.hud.classList.add('hidden');
       this.ui.results.classList.add('hidden');
       this.ui.pause.classList.add('hidden');
@@ -782,7 +951,7 @@
       if (this.speedLines) this.speedLines.material.opacity = 0;
       this.camera.fov = 58;
       this.camera.updateProjectionMatrix();
-      this.snapCamera = true;
+      this.snap();
       this.updateMenuBest();
       if (!initial) this.showMenuIntro();
     }
@@ -828,12 +997,17 @@
       this.finishedOrder.push(racer);
       racer.finishPlace = this.finishedOrder.length;
       if (racer.isPlayer) {
-        this.state = 'finishing';
-        this.resultTimer = 1.25;
+        const dual = this.players.length > 1;
         this.audio.finish(racer.finishPlace === 1);
-        this.showMessage(racer.finishPlace === 1 ? '冠军 · VICTORY' : '完赛 · RACE COMPLETE', 3);
-        this.ui.touchControls.classList.remove('active');
-        this.clearInput();
+        const tag = dual ? 'P' + (racer.playerIndex + 1) + ' ' : '';
+        this.showMessage(tag + (racer.finishPlace === 1 ? '冠军 · VICTORY' : '完赛 · P' + racer.finishPlace), 2.8);
+        // the race is only over once every human is home
+        if (this.players.every(p => p.finished)) {
+          this.state = 'finishing';
+          this.resultTimer = 1.25;
+          this.ui.touchControls.classList.remove('active');
+          this.clearInput();
+        }
       } else {
         racer.model.visible = false;
       }
@@ -878,10 +1052,20 @@
         const gap = r.finished
           ? (r === winner ? 'WINNER' : '+' + (r.finishTime - winner.finishTime).toFixed(2) + 's')
           : '+' + Math.max(0, (winner.raceDistance - r.raceDistance) / 38).toFixed(1) + 's';
-        row.innerHTML = `<span class="rpos">0${i + 1}</span><span class="rname">${r.name}${r.isPlayer ? ' · YOU' : ''}</span>` +
+        const who = r.isPlayer ? ' · ' + (this.players.length > 1 ? 'P' + (r.playerIndex + 1) : 'YOU') : '';
+        row.innerHTML = `<span class="rpos">0${i + 1}</span><span class="rname">${r.name}${who}</span>` +
           `<span class="rbest">${fmt(r.bestLap)}</span><span class="rgap">${gap}</span>`;
         this.ui.resultTable.appendChild(row);
       });
+
+      if (this.ui.resultDual) {
+        const dual = this.players.length > 1;
+        this.ui.resultDual.classList.toggle('hidden', !dual);
+        this.ui.resultDual.innerHTML = dual ? this.players.map((r, i) =>
+          `<div>P${i + 1} · ${r.name}<b>第 ${r.finishPlace || '-'} 名</b>` +
+          `<span>BEST ${fmt(r.bestLap)}</span></div>`
+        ).join('') : '';
+      }
 
       const rec = this.record[this.setup.track] || (this.record[this.setup.track] = {});
       const newRecord = !rec.lap || (p.bestLap && p.bestLap < rec.lap);
@@ -896,7 +1080,7 @@
       this.ui.touchControls.classList.remove('active');
       document.body.classList.remove('racing');
       this.audio.setPaused(true);
-      this.snapCamera = true;
+      this.snap();
     }
 
     loadRecord() {
@@ -936,8 +1120,15 @@
       this.acc += dt;
       let steps = 0;
       while (this.acc >= STEP && steps < 8) {
-        const ctrl = this.getControls(STEP);
-        this.player.update(STEP, ctrl, this.raceTime);
+        const ctrls = this.players.map((p, i) => this.getControls(STEP, i));
+        this.players.forEach((p, i) => {
+          // a human who already crossed the line coasts to a stop instead of
+          // freezing in the middle of a corner
+          const c = p.finished
+            ? { throttle: 0, brake: .3, steer: 0, drift: false, boost: false }
+            : ctrls[i];
+          p.update(STEP, c, this.raceTime);
+        });
         for (const r of this.opponents) {
           if (!r.finished) r.ai.update(STEP, this.raceTime);
         }
@@ -978,7 +1169,11 @@
             a.vel.x -= nx * imp; a.vel.z -= nz * imp;
             b.vel.x += nx * imp; b.vel.z += nz * imp;
             if ((a.isPlayer || b.isPlayer) && rel > 2.5) {
-              this.shake = Math.min(.8, this.shake + rel * .018);
+              for (const r of [a, b]) {
+                if (!r.isPlayer) continue;
+                const slot = this.players.indexOf(r);
+                if (slot >= 0) this.shakeP[slot] = Math.min(.8, this.shakeP[slot] + rel * .018);
+              }
               this.audio.collision(Math.min(1, rel / 10));
             }
           }
@@ -1019,14 +1214,17 @@
 
     updateLapEvents() {
       if (this.state !== 'racing') return;
-      const p = this.player;
-      if (p.lapTimes.length > this.lastLapCount) {
-        this.lastLapCount = p.lapTimes.length;
-        const lap = p.lastLap;
-        const isBest = Math.abs(lap - p.bestLap) < .001;
-        this.showMessage(`LAP ${p.completedLaps} · ${fmtShort(lap)}${isBest ? ' · BEST' : ''}`, 2.6);
+      this.players.forEach((r, i) => {
+        const seen = this.lastLapCountP[i] || 0;
+        if (r.lapTimes.length <= seen) return;
+        this.lastLapCountP[i] = r.lapTimes.length;
+        const lap = r.lastLap;
+        const isBest = Math.abs(lap - r.bestLap) < .001;
+        const tag = this.players.length > 1 ? 'P' + (i + 1) + ' ' : '';
+        this.showMessage(`${tag}LAP ${r.completedLaps} · ${fmtShort(lap)}${isBest ? ' · BEST' : ''}`, 2.6);
         if (isBest) this.audio.bestLap(); else this.audio.lap();
-      }
+      });
+      const p = this.player;
       const finalLap = this.track.lapCount - 1;
       if (p.completedLaps >= finalLap && !this._finalLapShown && p.lapTimes.length === finalLap) {
         this._finalLapShown = true;
@@ -1044,11 +1242,15 @@
     }
 
     spawnDriftSmoke(dt) {
-      const p = this.player;
-      if (this.state !== 'racing' || !p.drifting || Math.abs(p.driftAngle) < .07) return;
-      this.smokeTimer -= dt;
-      if (this.smokeTimer > 0) return;
-      this.smokeTimer = .035;
+      if (this.state !== 'racing') return;
+      this.players.forEach((p, i) => this.spawnPlayerSmoke(p, i, dt));
+    }
+
+    spawnPlayerSmoke(p, slot, dt) {
+      if (!p.drifting || Math.abs(p.driftAngle) < .07) { this.smokeTimerP[slot] = 0; return; }
+      this.smokeTimerP[slot] -= dt;
+      if (this.smokeTimerP[slot] > 0) return;
+      this.smokeTimerP[slot] = .035;
       const h = p.heading;
       const fwd = new V3(Math.sin(h), 0, Math.cos(h));
       const side = new V3(Math.cos(h), 0, -Math.sin(h));
@@ -1066,8 +1268,9 @@
     }
 
     onWallHit(racer, pos, power) {
-      if (racer !== this.player) return;
-      this.shake = Math.min(1, this.shake + power * 1.2 + .18);
+      const slot = this.players.indexOf(racer);
+      if (slot < 0) return;
+      this.shakeP[slot] = Math.min(1, this.shakeP[slot] + power * 1.2 + .18);
       this.audio.collision(power);
       const color = new THREE.Color(power > .55 ? 0xffb15c : 0xff6b9e);
       for (let i = 0; i < Math.floor(10 + power * 18); i++) {
@@ -1080,10 +1283,10 @@
     }
 
     onBoost(racer) {
-      if (racer.isPlayer) {
-        this.audio.boost();
-        this.shake = Math.min(this.shake + .18, .7);
-      }
+      if (!racer.isPlayer) return;
+      this.audio.boost();
+      const slot = this.players.indexOf(racer);
+      if (slot >= 0) this.shakeP[slot] = Math.min(this.shakeP[slot] + .18, .7);
     }
 
     /* ---- camera --------------------------------------------------------- */
@@ -1107,6 +1310,7 @@
         this.camera.position.copy(desired);
         this.lookAt.copy(look);
         this.snapCamera = false;
+        this.snapP[0] = this.snapP[1] = true;
       } else {
         this.camera.position.lerp(desired, 1 - Math.exp(-2.5 * dt));
         this.lookAt.lerp(look, 1 - Math.exp(-3.2 * dt));
@@ -1116,8 +1320,12 @@
       this.camera.lookAt(this.lookAt);
     }
 
-    updateChaseCamera(dt, mode) {
-      const p = this.player;
+    updateChaseCamera(dt, mode, slot) {
+      slot = slot || 0;
+      const p = this.players[slot] || this.player;
+      const cam = this.camOf(slot);
+      const lookAt = this.lookOf(slot);
+      const steer = this.steerP[slot] || 0;
       const h = p.heading;
       const fwd = new V3(Math.sin(h), 0, Math.cos(h));
       const side = new V3(Math.cos(h), 0, -Math.sin(h));
@@ -1136,7 +1344,7 @@
       } else {
         const back = 8.2 + speedN * 1.35;
         const high = 3.55 + speedN * .28;
-        const sideOffset = clamp(-p.vel.dot(side) * .045, -.9, .9) - this.steer * .15;
+        const sideOffset = clamp(-p.vel.dot(side) * .045, -.9, .9) - steer * .15;
         desired = new V3(
           p.pos.x - fwd.x * back + side.x * sideOffset,
           p.pos.y + high,
@@ -1147,45 +1355,68 @@
           p.pos.y + 1.15,
           p.pos.z + fwd.z * (8 + speedN * 8) + side.z * sideOffset * .3
         );
-        fovTarget = 63 + speedN * 10 + (p.boosting ? 6 : 0);
+        // a half-width viewport keeps the vertical fov but loses a lot of the
+        // width, so the split view opens up a little to keep the road readable
+        fovTarget = (63 + speedN * 10 + (p.boosting ? 6 : 0)) * (this.splitActive() ? 1.12 : 1);
       }
 
-      if (this.snapCamera) {
-        this.camera.position.copy(desired);
-        this.lookAt.copy(look);
-        this.snapCamera = false;
+      if (this.snapP[slot]) {
+        cam.position.copy(desired);
+        lookAt.copy(look);
+        this.snapP[slot] = false;
       } else {
         const posLerp = mode === 'finish' ? 2.2 : mode === 'intro' ? 2.6 : 9.2;
         const lookLerp = mode === 'intro' ? 3.4 : 9.5;
-        this.camera.position.lerp(desired, 1 - Math.exp(-posLerp * dt));
-        this.lookAt.lerp(look, 1 - Math.exp(-lookLerp * dt));
+        cam.position.lerp(desired, 1 - Math.exp(-posLerp * dt));
+        lookAt.lerp(look, 1 - Math.exp(-lookLerp * dt));
       }
-      this.camera.fov = damp(this.camera.fov, fovTarget, 3.2, dt);
-      this.camera.updateProjectionMatrix();
+      cam.fov = damp(cam.fov, Math.min(fovTarget, 104), 3.2, dt);
+      cam.updateProjectionMatrix();
 
-      if (this.shake > .002) {
-        const s = this.shake;
-        this.camera.position.x += (Math.random() - .5) * s * .14;
-        this.camera.position.y += (Math.random() - .5) * s * .12;
-        this.lookAt.x += (Math.random() - .5) * s * .18;
-        this.lookAt.y += (Math.random() - .5) * s * .12;
-        this.shake = Math.max(0, this.shake - dt * (1.5 + s * 1.4));
+      if (this.shakeP[slot] > .002) {
+        const s = this.shakeP[slot];
+        cam.position.x += (Math.random() - .5) * s * .14;
+        cam.position.y += (Math.random() - .5) * s * .12;
+        lookAt.x += (Math.random() - .5) * s * .18;
+        lookAt.y += (Math.random() - .5) * s * .12;
+        this.shakeP[slot] = Math.max(0, this.shakeP[slot] - dt * (1.5 + s * 1.4));
       }
-      this.camera.lookAt(this.lookAt);
-      if (mode !== 'finish') this.camera.rotateZ(-p.model.rotation.z * .38);
+      cam.lookAt(lookAt);
+      if (mode !== 'finish') cam.rotateZ(-p.model.rotation.z * .38);
+    }
+
+    /* drive every eye the split screen needs in one go */
+    updateCameras(dt, mode) {
+      if (!this.splitActive()) {
+        this.updateChaseCamera(dt, mode, 0);
+        return;
+      }
+      this.players.forEach((p, i) => {
+        this.updateChaseCamera(dt, p.finished ? 'finish' : mode, i);
+      });
     }
 
     updateSpeedLines(dt) {
-      const p = this.player;
+      const live = this.splitActive() ? 2 : 1;
+      for (let slot = 0; slot < this.speedLinesAll.length; slot++) {
+        this.updateSpeedLinesFor(slot, dt, slot < live);
+      }
+    }
+
+    updateSpeedLinesFor(slot, dt, active) {
+      const set = this.speedLinesAll[slot];
+      const p = this.players[slot] || this.player;
       const speedN = clamp(Math.abs(p.speed) / 52, 0, 1.2);
-      const target = this.state === 'racing' ? clamp((speedN - .5) * .8 + (p.boosting ? .5 : 0), 0, .72) : 0;
-      const m = this.speedLines.material;
+      const target = active && this.state === 'racing'
+        ? clamp((speedN - .5) * .8 + (p.boosting ? .5 : 0), 0, .72)
+        : 0;
+      const m = set.lines.material;
       m.opacity = damp(m.opacity, target, 4, dt);
       if (m.opacity < .01) return;
-      const positions = this.speedLinePos;
+      const positions = set.pos;
       const move = (25 + Math.abs(p.speed) * 3.2 + (p.boosting ? 45 : 0)) * dt;
-      for (let i = 0; i < this.speedLineData.length; i++) {
-        const d = this.speedLineData[i];
+      for (let i = 0; i < set.data.length; i++) {
+        const d = set.data[i];
         d.z += move;
         if (d.z > -3) {
           d.z = -55 - Math.random() * 35;
@@ -1198,7 +1429,7 @@
         positions[o] = d.x; positions[o + 1] = d.y; positions[o + 2] = d.z;
         positions[o + 3] = d.x; positions[o + 4] = d.y; positions[o + 5] = d.z + d.len;
       }
-      this.speedLines.geometry.attributes.position.needsUpdate = true;
+      set.lines.geometry.attributes.position.needsUpdate = true;
     }
 
     /* ---- HUD ------------------------------------------------------------ */
@@ -1249,13 +1480,17 @@
     }
 
     updateMinimap() {
-      const ctx = this.ui.minimap.getContext('2d');
-      const size = 190;
+      this.drawMinimap(this.ui.minimap.getContext('2d'), 190, this.player);
+    }
+
+    drawMinimap(ctx, size, p) {
+      const k = size / 190;
       ctx.clearRect(0, 0, size, size);
+      ctx.save();
+      ctx.scale(k, k);
       ctx.drawImage(this.mapBase, 0, 0);
       // route pulse at start
       ctx.save();
-      const p = this.player;
       // other cars first
       for (const r of this.racers) {
         if (r === p) continue;
@@ -1274,6 +1509,36 @@
       ctx.fillStyle = '#aeffff'; ctx.shadowColor = '#21f4ff'; ctx.shadowBlur = 10; ctx.fill();
       ctx.strokeStyle = '#041018'; ctx.lineWidth = 1.2; ctx.stroke();
       ctx.restore();
+      ctx.restore();
+    }
+
+    /* compact per-half HUD used while the screen is split */
+    updateHUD2P(dt) {
+      this.ui.raceTime.textContent = fmt(this.raceTime);
+      const lapCount = this.track.lapCount;
+      this.players.forEach((p, i) => {
+        const panel = this.p2panels[i];
+        if (!panel) return;
+        const f = panel.f;
+        const lap = clamp(Math.floor(Math.max(0, p.raceDistance) / this.track.total) + 1, 1, lapCount);
+        f.lap.textContent = lap;
+        f.lap.parentNode.querySelector('i').textContent = '/' + lapCount;
+        f.pos.textContent = p.place || 1;
+        f.field.textContent = this.racers.length;
+        f.speed.textContent = String(Math.round(Math.abs(p.speed) * 3.6)).padStart(3, '0');
+        const current = p.completedLaps === 0 ? this.raceTime : this.raceTime - p.lapStart;
+        f.time.textContent = p.finished ? 'FINISHED' : fmt(Math.max(0, current));
+        f.nitro.style.width = (clamp(p.nitro / p.nitroMax, 0, 1) * 100).toFixed(1) + '%';
+        const dot = p.info ? p.vel.x * p.info.t.x + p.vel.z * p.info.t.z : 0;
+        f.warn.classList.toggle('on', !p.finished && Math.abs(p.speed) > 5 && dot < -4);
+        this.drawMinimap(f.ctx, f.map.width, p);
+      });
+
+      if (this.messageTimer > 0) {
+        this.messageTimer -= dt;
+        if (this.messageTimer <= 0) this.ui.raceMessage.textContent = '';
+      }
+      this.updateSpeedLines(dt);
     }
 
     /* ---- frame ---------------------------------------------------------- */
@@ -1318,8 +1583,10 @@
             this.ui.touchControls.classList.add('active');
           }
         }
-        this.updateChaseCamera(dt, 'intro');
-        this.audio.update(0, this.lastThrottle || 0, 0, false, false);        this.updateHUDLite();
+        this.updateCameras(dt, 'intro');
+        this.audio.update(0, this.lastThrottle || 0, 0, false, false);
+        this.updateHUDLite();
+        if (this.splitActive()) this.updateHUD2P(dt);
       } else if (this.state === 'racing' || this.state === 'finishing') {
         if (this.state === 'racing') {
           this.updateRace(dt);
@@ -1327,27 +1594,30 @@
             this.goTimer -= dt;
             if (this.goTimer <= 0) this.ui.countdown.classList.add('hidden');
           }
-          this.updateChaseCamera(dt, 'race');
+          this.updateCameras(dt, 'race');
+          // one engine sound between them: the faster car owns it
+          const loud = this.players.reduce((a, b) => (Math.abs(b.speed) > Math.abs(a.speed) ? b : a));
           this.audio.update(
-            Math.abs(p.speed) * 3.6,
+            Math.abs(loud.speed) * 3.6,
             this.lastThrottle || 0,
-            p.drifting ? Math.abs(p.driftAngle) : 0,
-            p.boosting,
-            p.offroad
+            loud.drifting ? Math.abs(loud.driftAngle) : 0,
+            loud.boosting,
+            loud.offroad
           );
         } else {
           this.resultTimer -= dt;
           this.menuTime += dt;
-          this.updateChaseCamera(dt, 'finish');
+          this.updateCameras(dt, 'finish');
           if (this.resultTimer <= 0) this.showResults();
           this.audio.update(0, 0, 0, false, false);
         }
-        this.updateHUD(dt);
+        if (this.splitActive()) this.updateHUD2P(dt);
+        else this.updateHUD(dt);
       } else if (this.state === 'paused') {
         this.audio.update(0, 0, 0, false, false);
       } else if (this.state === 'results') {
         this.menuTime += dt;
-        this.updateChaseCamera(dt, 'finish');
+        this.updateCameras(dt, 'finish');
         this.updateSpeedLines(dt);
       }
 
@@ -1355,13 +1625,17 @@
       this.smoke.update(dt);
       this.sparks.update(dt);
 
-      // shadow follows the action
-      const focus = (this.state === 'menu' || this.state === 'results') ? p.pos : p.pos;
+      // shadow follows the action - between the two cars when split, so both
+      // stay inside the shadow frustum
+      const focus = this.splitActive() && this.players[1]
+        ? { x: (this.players[0].pos.x + this.players[1].pos.x) / 2,
+            z: (this.players[0].pos.z + this.players[1].pos.z) / 2 }
+        : this.players[0].pos;
       this.track.moon.position.set(focus.x - 50, 80, focus.z + 42);
       this.track.moon.target.position.set(focus.x, 0, focus.z);
       this.track.moon.target.updateMatrixWorld();
 
-      this.renderer.render(this.scene, this.camera);
+      this.renderScene();
 
       if (!this._loaded) {
         this._loaded = true;
@@ -1380,6 +1654,42 @@
             String(err && err.message || err).replace(/</g, '&lt;') + '</span></div>';
         }
       }
+    }
+
+    /* one eye per half of the screen, or one eye for the whole screen */
+    renderScene() {
+      const r = this.renderer;
+      const w = window.innerWidth, h = window.innerHeight;
+      // both eyes share one shadow map, refreshed once per frame
+      r.shadowMap.needsUpdate = true;
+      if (!this.splitActive()) {
+        r.setScissorTest(false);
+        r.setViewport(0, 0, w, h);
+        if (this.cam1.aspect !== w / h) {
+          this.cam1.aspect = w / h;
+          this.cam1.updateProjectionMatrix();
+        }
+        r.render(this.scene, this.cam1);
+        return;
+      }
+      const leftW = Math.floor(w / 2);
+      const rightW = w - leftW;
+      const cams = [this.cam1, this.cam2];
+      const boxes = [[0, leftW], [leftW, rightW]];
+      r.setScissorTest(true);
+      for (let i = 0; i < 2; i++) {
+        const cam = cams[i];
+        const x = boxes[i][0], cw = boxes[i][1];
+        if (cam.aspect !== cw / h) {
+          cam.aspect = cw / h;
+          cam.updateProjectionMatrix();
+        }
+        r.setViewport(x, 0, cw, h);
+        r.setScissor(x, 0, cw, h);
+        r.render(this.scene, cam);
+      }
+      r.setScissorTest(false);
+      r.setViewport(0, 0, w, h);
     }
 
     updateHUDLite() {
