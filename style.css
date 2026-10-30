@@ -1218,6 +1218,13 @@ body.garage-2p .g-paint,
 body.garage-2p .g-hero,
 body.garage-2p .g-count { display: none; }
 body.garage-2p .g-title h1 { font-size: 26px; }
+@media (max-width: 820px) {
+  .g-dual { padding: 74px 10px 88px; gap: 10px; }
+  .g-dual .gd-half { width: 47%; padding: 9px 9px 8px; }
+  .g-dual .gd-car span { font-size: 8px; }
+  .g-dual .gd-paint { width: 16px; height: 16px; }
+  .g-dual .gd-keys { display: none; }
+}
 
 
 /* during a split race the single-player panels step aside */
