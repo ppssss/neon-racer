@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#05060f" />
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+<title>车库 · NEON RIDGE</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body class="garage-page">
+
+<canvas id="stage" aria-label="赛车 3D 预览"></canvas>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div class="g-scan"></div>
+
+<header class="g-head">
+  <a class="g-back" href="index.html"><i>←</i><span>主菜单</span></a>
+  <div class="g-title">
+    <span class="micro">GARAGE / 霓虹车库</span>
+    <h1>选择赛车</h1>
+  </div>
+  <div class="g-count"><b id="gIndex">01</b><i>/<span id="gTotal">08</span></i></div>
+</header>
+
+<aside class="g-list" id="gList" aria-label="赛车列表"></aside>
+
+<aside class="g-paint">
+  <div class="g-paint-head"><span class="micro">PAINT · 车漆</span><b id="gHex">#18D9F0</b></div>
+  <div class="g-swatches" id="gSwatches"></div>
+  <label class="g-pick">
+    <span>自定义颜色</span>
+    <input id="gPick" type="color" value="#18d9f0" />
+  </label>
+  <button id="gReset" class="g-reset" type="button">恢复原厂色</button>
+  <p class="g-hint">拖动车辆旋转 · ← → 切换赛车</p>
+</aside>
+
+<div class="g-hero">
+  <div class="g-hero-name" id="gName">AURORA</div>
+  <div class="g-hero-meta"><span id="gTag">NR-01</span><em id="gBlurb"></em></div>
+  <div class="g-stats">
+    <div><span>TOP SPEED</span><b id="gSpeed">0</b><i><u style="width:0%"></u></i></div>
+    <div><span>ACCEL</span><b id="gAccel">0</b><i><u style="width:0%"></u></i></div>
+    <div><span>GRIP</span><b id="gGrip">0</b><i><u style="width:0%"></u></i></div>
+  </div>
+</div>
+
+<footer class="g-foot">
+  <button id="gConfirm" class="cta">
+    <span class="cta-label">进入比赛</span>
+    <span class="cta-en">CONFIRM &amp; RACE</span>
+    <i class="cta-arrow">→</i>
+  </button>
+</footer>
+
+<div id="gLoading" class="g-loading"><i></i><span>LOADING MACHINES</span></div>
+
+<script src="vendor/three.min.js"></script>
+<script>window.NR = { REV: '1.0' };</script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="js/util.js"></script>
+<script src="js/car-model.js"></script>
+<script src="js/car-model-lambo.js"></script>
+<script src="js/car-model-temerario.js"></script>
+<script src="js/car-model-gtr.js"></script>
+<script src="js/car-model-r8.js"></script>
+<script src="js/car-model-f12.js"></script>
+<script src="js/car-model-mclaren.js"></script>
+<script src="js/car-model-veyron.js"></script>
+<script src="js/car-body.js"></script>
+<script src="js/car.js"></script>
+<script src="js/car-select.js"></script>
+</body>
+</html>
