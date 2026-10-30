@@ -235,7 +235,11 @@
       this.player.playerIndex = 0;
       this.players = [this.player];
       if (dual) {
-        const p2 = new NR.Racer(this, D[car2], true, { skill: 1 });
+        const base2 = D[car2];
+        const data2 = this.setup.paint2
+          ? Object.assign({}, base2, { color: parseInt(this.setup.paint2.slice(1), 16) })
+          : base2;
+        const p2 = new NR.Racer(this, data2, true, { skill: 1 });
         p2.playerIndex = 1;
         this.players.push(p2);
       }
@@ -351,25 +355,37 @@
     }
 
     /* ---- custom paint ---------------------------------------------------- */
-    carPaintColor() {
-      return this.setup.paint || cssColor(NR.CAR_DATA[this.setup.car].color);
+    carPaintOf(slot) {
+      const hex = slot === 1 ? this.setup.paint2 : this.setup.paint;
+      if (hex) return hex;
+      const id = slot === 1 ? this.setup.car2 : this.setup.car;
+      return cssColor((NR.CAR_DATA[id] || NR.CAR_DATA[NR.CAR_ORDER[0]]).color);
     }
 
-    setPaint(hex) {
-      this.setup.paint = hex || null;
+    carPaintColor() {
+      return this.carPaintOf(0);
+    }
+
+    setPaint(hex) { this.setPaintAt(0, hex); }
+
+    setPaintAt(slot, hex) {
+      if (slot === 1) this.setup.paint2 = hex || null;
+      else this.setup.paint = hex || null;
       this.saveSetup();
-      this.paintPlayer();
+      this.paintPlayerAt(slot);
       this.updateSetupUI();
     }
 
-    // repaint the player's body in place (menu is live, no rebuild needed)
-    paintPlayer() {
-      if (!this.player || !this.player.model) return;
-      const col = new THREE.Color(this.carPaintColor());
-      this.player.color = col.getHex();
+    // repaint a human's body in place (menu is live, no rebuild needed)
+    paintPlayerAt(slot) {
+      const racer = this.players[slot];
+      if (!racer || !racer.model) return;
+      const col = new THREE.Color(this.carPaintOf(slot));
+      racer.color = col.getHex();
       // keep data a copy so the shared CAR_DATA palette is never overwritten
-      this.player.data = Object.assign({}, NR.CAR_DATA[this.setup.car], { color: col.getHex() });
-      const ud = this.player.model.userData;
+      const baseId = slot === 1 ? this.setup.car2 : this.setup.car;
+      racer.data = Object.assign({}, NR.CAR_DATA[baseId], { color: col.getHex() });
+      const ud = racer.model.userData;
       if (ud.paintMat) {
         ud.paintMat.color.copy(col);
         ud.paintMat.emissive.copy(col);
@@ -377,10 +393,16 @@
       if (ud.under) ud.under.material.color.copy(col);
     }
 
+    paintPlayer() {
+      this.paintPlayerAt(0);
+      this.paintPlayerAt(1);
+    }
+
     loadSetup() {
       const setup = {
         track: NR.TRACKS[0].id, car: NR.CAR_ORDER[0],
-        car2: NR.CAR_ORDER[1], mode: '1p', difficulty: 'normal', paint: null
+        car2: NR.CAR_ORDER[1], mode: '1p', difficulty: 'normal',
+        paint: null, paint2: null
       };
       try {
         const saved = JSON.parse(localStorage.getItem('neonRidgeSetup') || '{}');
@@ -391,6 +413,9 @@
         if (NR.DIFFICULTY[saved.difficulty]) setup.difficulty = saved.difficulty;
         if (typeof saved.paint === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint)) {
           setup.paint = saved.paint.toLowerCase();
+        }
+        if (typeof saved.paint2 === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint2)) {
+          setup.paint2 = saved.paint2.toLowerCase();
         }
       } catch (e) { /* noop */ }
       return setup;
@@ -439,27 +464,6 @@
         });
       }
 
-      // P2 drives anything that is not already taken by P1
-      const p2Wrap = this.ui.carOptions2;
-      if (p2Wrap) {
-        p2Wrap.innerHTML = '';
-        this.carCards2 = [];
-        for (const id of NR.CAR_ORDER) {
-          const car = NR.CAR_DATA[id];
-          const hex = cssColor(car.color);
-          const btn = document.createElement('button');
-          btn.className = 'p2-card';
-          btn.type = 'button';
-          btn.innerHTML = `<i style="background:${hex}"></i><span>${car.name}</span>`;
-          btn.addEventListener('click', () => {
-            this.audio.ui();
-            this.selectCar2(id);
-          });
-          p2Wrap.appendChild(btn);
-          this.carCards2.push({ id, el: btn });
-        }
-      }
-
       this.updateSetupUI();
     }
 
@@ -476,17 +480,11 @@
         });
       }
       if (this.ui.setupMode) this.ui.setupMode.textContent = dual ? '双人分屏' : '单人挑战';
-      if (this.carCards2) {
-        for (const c of this.carCards2) {
-          c.el.classList.toggle('on', c.id === this.setup.car2);
-          c.el.disabled = c.id === this.setup.car;   // P1 already has it
-          c.el.style.opacity = c.id === this.setup.car ? '.32' : '';
-        }
-      }
-      if (this.ui.setupCar2) {
-        const c2 = NR.CAR_DATA[this.setup.car2];
-        this.ui.setupCar2.textContent = c2 ? c2.name : '--';
-      }
+      // the two machines are picked in the garage page, split into two halves
+      const ge1 = $('geP1');
+      if (ge1) ge1.textContent = NR.CAR_DATA[this.setup.car].name;
+      const ge2 = $('geP2');
+      if (ge2) ge2.textContent = NR.CAR_DATA[this.setup.car2] ? NR.CAR_DATA[this.setup.car2].name : '—';
 
       const cfg = this.trackCfg(this.setup.track);
       const car = NR.CAR_DATA[this.setup.car];
@@ -613,7 +611,7 @@
         'resultSpeed', 'resultDrift', 'resultTable', 'menuBest', 'startFlash', 'muteBtn',
         'touchControls', 'startBtn', 'pauseBtn', 'muteBtn', 'resumeBtn', 'restartBtn',
         'quitBtn', 'againBtn', 'menuBtn', 'pause', 'menu', 'paintPick', 'paintReset',
-        'hud2', 'resultDual', 'modeRow', 'setupMode', 'setupCar2', 'carOptions2', 'p2Group'
+        'hud2', 'resultDual', 'modeRow', 'setupMode', 'garageDual', 'garageGroup'
       ];
       this.ui = {};
       ids.forEach(id => { if (!this.ui[id]) this.ui[id] = $(id); });
@@ -1296,10 +1294,13 @@
       const fwd = new V3(Math.sin(h), 0, Math.cos(h));
       const side = new V3(Math.cos(h), 0, -Math.sin(h));
       const t = Math.sin(this.menuTime * .13);
+      // split mode: stand a little further back so the second human is in frame
+      // too, but keep aiming past P1 so the UI panel does not cover both cars
+      const wide = this.players[1] ? 1.1 : 1;
       const desired = new V3(
-        p.pos.x - fwd.x * (7.7 + t * .45) - side.x * (6.2 + t * .55),
+        p.pos.x - fwd.x * (7.7 + t * .45) * wide - side.x * (6.2 + t * .55) * wide,
         p.pos.y + 3.05 + Math.sin(this.menuTime * .19) * .12,
-        p.pos.z - fwd.z * (7.7 + t * .45) - side.z * (6.2 + t * .55)
+        p.pos.z - fwd.z * (7.7 + t * .45) * wide - side.z * (6.2 + t * .55) * wide
       );
       const look = new V3(
         p.pos.x + fwd.x * 3.6 - side.x * 4.0,

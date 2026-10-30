@@ -22,12 +22,33 @@
       // fields this page does not own, but must not wipe on save
       if (saved.mode === '2p') setup.mode = '2p';
       if (NR.CAR_ORDER.includes(saved.car2)) setup.car2 = saved.car2;
+      if (typeof saved.paint2 === 'string' && /^#[0-9a-f]{6}$/i.test(saved.paint2)) setup.paint2 = saved.paint2.toLowerCase();
+      if (NR.DIFFICULTY && NR.DIFFICULTY[saved.difficulty]) setup.difficulty = saved.difficulty;
     } catch (e) { /* noop */ }
     return setup;
   }
   const setup = readSetup();
   const save = () => {
     try { localStorage.setItem(STORE, JSON.stringify(setup)); } catch (e) { /* noop */ }
+  };
+
+  /* ---- two-player split garage -------------------------------------------- */
+  const DUAL = /(^|&)mode=2p(&|$)/.test(location.search.slice(1));
+  if (DUAL) {
+    setup.mode = '2p';
+    if (!NR.CAR_ORDER.includes(setup.car2) || setup.car2 === setup.car) {
+      setup.car2 = NR.CAR_ORDER.find(id => id !== setup.car) || setup.car;
+    }
+  }
+  const carOf = (slot) => (slot === 1 ? setup.car2 : setup.car);
+  const paintOf = (slot) => (slot === 1 ? setup.paint2 : setup.paint);
+  const setCarAt = (slot, id) => {
+    if (slot === 1) setup.car2 = id; else setup.car = id;
+    if (slot === 1) setup.paint2 = null; else setup.paint = null;
+  };
+  const setPaintAt = (slot, hex) => {
+    const v = hex && /^#[0-9a-f]{6}$/i.test(hex) ? hex.toLowerCase() : null;
+    if (slot === 1) setup.paint2 = v; else setup.paint = v;
   };
 
   const hexOf = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -88,33 +109,51 @@
   const turntable = new THREE.Group();
   scene.add(turntable);
 
-  let model = null;
+  // one holder per human; in solo mode only the first one is used
+  const holders = [new THREE.Group(), new THREE.Group()];
+  holders.forEach(h => turntable.add(h));
+  if (DUAL) {
+    holders[0].position.x = -2.45;
+    holders[0].rotation.y = .26;
+    holders[1].position.x = 2.45;
+    holders[1].rotation.y = -.26;
+    ring.visible = false;
+  }
+
+  const models = [null, null];
   let spin = 0;
   let drag = null;
 
-  function buildCar() {
-    if (model) {
-      NR.disposeCarModel(model);
-      turntable.remove(model);
-      model = null;
+  function buildCar(slot) {
+    slot = slot || 0;
+    if (models[slot]) {
+      NR.disposeCarModel(models[slot]);
+      holders[slot].remove(models[slot]);
+      models[slot] = null;
     }
-    const data = Object.assign({}, NR.CAR_DATA[setup.car], { color: parseInt(currentHex().slice(1), 16) });
-    model = NR.createCarModel(data, true);
-    turntable.add(model);
+    const hex = paintOf(slot) || hexOf(NR.CAR_DATA[carOf(slot)].color);
+    const data = Object.assign({}, NR.CAR_DATA[carOf(slot)], { color: parseInt(hex.slice(1), 16) });
+    models[slot] = NR.createCarModel(data, true);
+    holders[slot].add(models[slot]);
     // wheels sit still in the garage, but the front pair gets a little lock
-    const ud = model.userData;
+    const ud = models[slot].userData;
     if (ud && ud.frontPivots) for (const p of ud.frontPivots) p.rotation.y = .16;
-    applyPaint();
+    applyPaint(slot);
   }
 
-  function applyPaint() {
+  function applyPaint(slot) {
+    slot = slot || 0;
+    const model = models[slot];
     if (!model) return;
-    const col = new THREE.Color(currentHex());
+    const hex = paintOf(slot) || hexOf(NR.CAR_DATA[carOf(slot)].color);
+    const col = new THREE.Color(hex);
     const ud = model.userData;
     if (ud.paintMat) { ud.paintMat.color.copy(col); ud.paintMat.emissive.copy(col); }
     if (ud.under) ud.under.material.color.copy(col);
-    const chip = document.querySelector('.g-list .g-card.on .g-chip');
-    if (chip) chip.style.background = `linear-gradient(100deg,${currentHex()},${currentHex()}33 70%,transparent)`;
+    if (!DUAL) {
+      const chip = document.querySelector('.g-list .g-card.on .g-chip');
+      if (chip) chip.style.background = `linear-gradient(100deg,${hex},${hex}33 70%,transparent)`;
+    }
   }
 
   /* ---- UI ----------------------------------------------------------------- */
@@ -151,6 +190,7 @@
   }
 
   function syncUI() {
+    if (DUAL) { syncDual(); return; }
     const d = NR.CAR_DATA[setup.car];
     const hex = currentHex();
     const st = spec(d.stats);
@@ -174,24 +214,25 @@
     if (chip) chip.style.background = `linear-gradient(100deg,${hex},${hex}33 70%,transparent)`;
   }
 
-  function selectCar(id) {
+  function selectCar(id, slot) {
     if (!NR.CAR_DATA[id]) return;
-    setup.car = id;
-    setup.paint = null;             // back to the factory colour
+    slot = slot || 0;
+    setCarAt(slot, id);              // also drops the custom paint back to factory
     save();
-    buildCar();
+    buildCar(slot);
     syncUI();
     spin = 0;
   }
 
-  function setPaint(hex) {
-    setup.paint = /^#[0-9a-f]{6}$/i.test(hex) ? hex.toLowerCase() : null;
+  function setPaint(hex, slot) {
+    slot = slot || 0;
+    setPaintAt(slot, hex);
     save();
-    applyPaint();
+    applyPaint(slot);
     syncUI();
   }
 
-  const SWATCHES = [
+  const SWATCHES = NR.PAINT_SWATCHES || [
     '#18d9f0', '#9dff3c', '#ffb01a', '#f02548',
     '#ff2d8d', '#9d78ff', '#9fc6ff', '#f4f6ff',
     '#20232c', '#0f7a4a'
@@ -211,8 +252,98 @@
     }
   }
 
+  /* ---- two-player halves -------------------------------------------------- */
+  const halves = [];
+
+  function buildDual() {
+    const wrap = $('gDual');
+    wrap.hidden = false;
+    document.body.classList.add('garage-2p');
+    ['P1', 'P2'].forEach((tag, slot) => {
+      const half = document.createElement('div');
+      half.className = 'gd-half' + (slot ? ' p2' : '');
+      half.innerHTML =
+        '<div class="gd-head">' +
+          '<span class="gd-tag' + (slot ? ' alt' : '') + '">' + tag + '</span>' +
+          '<b data-f="name"></b><em data-f="tag"></em><span class="gd-dot" data-f="dot"></span>' +
+        '</div>' +
+        '<div class="gd-cars" data-f="cars"></div>' +
+        '<div class="gd-paints" data-f="paints"></div>' +
+        '<div class="gd-keys">' + (slot
+          ? '<b>P2</b> ↑↓←→ 驾驶 · ENTER 漂移 · R SHIFT 氮气 · BKSP 复位'
+          : '<b>P1</b> WASD 驾驶 · 空格 漂移 · SHIFT 氮气 · R 复位') + '</div>';
+      wrap.insertBefore(half, wrap.querySelector('.g-dual-divider'));
+
+      const f = {};
+      half.querySelectorAll('[data-f]').forEach(el => { f[el.dataset.f] = el; });
+
+      const cards = NR.CAR_ORDER.map(id => {
+        const car = NR.CAR_DATA[id];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'gd-car';
+        btn.dataset.car = id;
+        btn.innerHTML = '<i style="background:' + hexOf(car.color) + '"></i><span>' + car.name + '</span>';
+        btn.addEventListener('click', () => selectCar(id, slot));
+        f.cars.appendChild(btn);
+        return { id, el: btn };
+      });
+
+      const paints = SWATCHES.map(hex => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'gd-paint';
+        b.style.background = hex;
+        b.title = hex.toUpperCase();
+        b.addEventListener('click', () => setPaint(hex, slot));
+        f.paints.appendChild(b);
+        return { hex, el: b };
+      });
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'gd-reset';
+      reset.textContent = '原厂';
+      reset.addEventListener('click', () => setPaint(null, slot));
+      f.paints.appendChild(reset);
+      const pick = document.createElement('label');
+      pick.className = 'gd-pick';
+      pick.innerHTML = '<span>自定义</span><input type="color" value="#ffffff">';
+      pick.querySelector('input').addEventListener('input', (e) => setPaint(e.target.value, slot));
+      f.paints.appendChild(pick);
+      f.pick = pick.querySelector('input');
+
+      halves.push({ slot, f, cards, paints, reset });
+    });
+  }
+
+  function syncDual() {
+    for (const half of halves) {
+      const slot = half.slot;
+      const ownId = carOf(slot);
+      const otherId = carOf(1 - slot);
+      const car = NR.CAR_DATA[ownId];
+      const hex = paintOf(slot) || hexOf(car.color);
+      half.f.name.textContent = car.name;
+      half.f.tag.textContent = car.tag;
+      half.f.dot.style.background = hex;
+      half.f.dot.style.color = hex;
+      half.f.pick.value = hex;
+      half.f.pick.parentNode.classList.toggle('on', !!paintOf(slot));
+      for (const c of half.cards) {
+        c.el.classList.toggle('on', c.id === ownId);
+        c.el.classList.toggle('taken', c.id === otherId);
+        c.el.disabled = c.id === otherId;
+      }
+      for (const p of half.paints) p.el.classList.toggle('on', !!paintOf(slot) && p.hex === paintOf(slot));
+      half.reset.classList.toggle('on', !paintOf(slot));
+    }
+    $('gConfirm').querySelector('.cta-label').textContent = '一起出发';
+    $('gConfirm').querySelector('.cta-en').textContent = 'BOTH LIGHTS OUT';
+  }
+
   /* ---- interaction -------------------------------------------------------- */
   window.addEventListener('pointerdown', (e) => {
+    if (DUAL) return;
     if (e.target.closest('.g-list, .g-paint, .g-foot, .g-head')) return;
     drag = { x: e.clientX, y: 0 };
     canvas.setPointerCapture?.(e.pointerId);
@@ -226,6 +357,10 @@
   window.addEventListener('pointercancel', () => { drag = null; });
 
   window.addEventListener('keydown', (e) => {
+    if (DUAL) {
+      if (e.key === 'Enter') $('gConfirm').click();
+      return;
+    }
     const i = NR.CAR_ORDER.indexOf(setup.car);
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') selectCar(NR.CAR_ORDER[(i + 1) % NR.CAR_ORDER.length]);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') selectCar(NR.CAR_ORDER[(i - 1 + NR.CAR_ORDER.length) % NR.CAR_ORDER.length]);
@@ -249,7 +384,7 @@
   function frame(now) {
     const dt = Math.min(.05, (now - last) / 1000);
     last = now;
-    if (!drag) spin += dt * .18;
+    if (!drag && !DUAL) spin += dt * .18;
     turntable.rotation.y = spin;
     ring.material.opacity = .32 + Math.sin(now * .0012) * .12;
     rimA.intensity = 2.2 + Math.sin(now * .0016) * .45;
@@ -258,15 +393,25 @@
   }
 
   /* ---- boot --------------------------------------------------------------- */
-  buildList();
-  buildSwatches();
+  if (DUAL) {
+    // two cars parked side by side, one half of the screen each
+    camera.position.set(8.6, 3.6, 12.2);
+    camera.fov = 40;
+    camera.lookAt(0, .95, 0);
+    camera.updateProjectionMatrix();
+    buildDual();
+  } else {
+    buildList();
+    buildSwatches();
+  }
   syncUI();
   resize();
   requestAnimationFrame(frame);
 
   const loading = $('gLoading');
   NR.carModelReady.then(() => {
-    buildCar();
+    buildCar(0);
+    if (DUAL) buildCar(1);
     loading.classList.add('done');
   });
 })();

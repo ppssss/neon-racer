@@ -96,6 +96,13 @@
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
 
+  /* paint presets shared by the garage page and the split-screen picker */
+  const PAINT_SWATCHES = [
+    '#18d9f0', '#9dff3c', '#ffb01a', '#f02548',
+    '#ff2d8d', '#9d78ff', '#9fc6ff', '#f4f6ff',
+    '#20232c', '#0f7a4a'
+  ];
+
   /* ======================================================================== */
   class Racer {
     constructor(game, data, isPlayer, opts) {
@@ -476,6 +483,7 @@
     }
   }
 
+  NR.PAINT_SWATCHES = PAINT_SWATCHES;
   NR.DIFFICULTY = DIFFICULTY;
   NR.DIFFICULTY_ORDER = DIFFICULTY_ORDER;
   NR.CAR_DATA = CAR_DATA;

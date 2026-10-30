@@ -1047,13 +1047,10 @@ body.garage-page {
 }
 .diff-btn { flex: 0 1 96px; }
 .diff-label { margin-left: 10px; }
-.p2-keys b { color: #9fe6ff; font-weight: 500; margin-right: 4px; }
 .mode-label {
   font-family: var(--mono); font-size: 7px; letter-spacing: .2em; color: #4b647e;
   margin-right: 2px;
 }
-/* P2 picker gets its own full row so the track cards keep their width */
-#p2Group { flex: 1 1 100%; }
 .mode-hint {
   margin-left: auto; font-family: var(--mono); font-size: 8px; letter-spacing: .12em;
   color: #45607a; transition: opacity .2s;
@@ -1067,30 +1064,161 @@ body:not(.mode-2p) .mode-hint { opacity: 0; }
 }
 .mode-btn.on em { color: var(--cyan); }
 
-#p2Group { display: none; }
-body.mode-2p #p2Group { display: block; }
-#carOptions2 { display: flex; gap: 5px; }
-.p2-card {
-  flex: 1 1 0; min-width: 0; padding: 6px 4px 5px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
+/* ==========================================================================
+   SPLIT GARAGE — two humans pick their machine on their own half
+   ========================================================================== */
+.garage-dual {
+  display: none;
+  flex: 1 1 100%;
+  gap: 16px;
+  padding: 9px 12px 10px;
   background: rgba(8, 14, 30, .5);
   border: 1px solid rgba(130, 190, 255, .13);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
+}
+body.mode-2p .garage-dual { display: flex; }
+body.mode-2p #garageGroup { display: none; }
+
+.gd-half { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gd-split {
+  flex: none; width: 1px; align-self: stretch;
+  background: linear-gradient(180deg, rgba(33, 244, 255, 0) 0%, rgba(33, 244, 255, .34) 20%, rgba(33, 244, 255, .34) 80%, rgba(33, 244, 255, 0) 100%);
+}
+.gd-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gd-tag {
+  flex: none; padding: 2px 7px; font-family: var(--mono); font-size: 8px; font-weight: 700;
+  letter-spacing: .14em; color: #041018; background: var(--cyan);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+.gd-tag.alt { background: var(--pink); color: #1a0310; }
+.gd-head b {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #eef8ff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gd-head em { margin-left: auto; font-style: normal; font-family: var(--mono); font-size: 7px; color: #4b647e; }
+.gd-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+.gd-cars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.gd-car {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
+  padding: 5px 3px 4px; cursor: pointer;
+  background: rgba(8, 14, 30, .55);
+  border: 1px solid rgba(130, 190, 255, .12);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%);
   transition: border-color .15s, background .15s, transform .15s;
 }
-.p2-card i { display: block; width: 100%; height: 3px; }
-.p2-card span { font-family: var(--mono); font-size: 7px; letter-spacing: .04em; color: #7f96ae; white-space: nowrap; }
-.p2-card:hover { border-color: rgba(139, 229, 255, .45); transform: translateY(-1px); }
-.p2-card.on { border-color: rgba(255, 45, 141, .8); background: rgba(255, 45, 141, .12); }
-.p2-card.on span { color: #ffd0e3; }
-.p2-keys {
-  margin-top: 6px; font-family: var(--mono); font-size: 7px; letter-spacing: .08em;
-  color: #4b647e; line-height: 1.9;
+.gd-car i { display: block; width: 100%; height: 3px; }
+.gd-car span {
+  max-width: 100%; font-family: var(--mono); font-size: 7px; letter-spacing: .02em;
+  color: #8299b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.p2-keys kbd {
-  padding: 1px 4px; font-size: 7px; color: #9fe6ff;
-  border: 1px solid rgba(130, 190, 255, .2); background: rgba(10, 16, 32, .7);
+.gd-car:hover { border-color: rgba(139, 229, 255, .45); transform: translateY(-1px); }
+.gd-car.on { border-color: rgba(33, 244, 255, .8); background: rgba(33, 244, 255, .13); }
+.gd-car.on span { color: #dff8ff; }
+.gd-half[data-p="1"] .gd-car.on { border-color: rgba(255, 45, 141, .8); background: rgba(255, 45, 141, .13); }
+.gd-car.taken { opacity: .3; cursor: not-allowed; }
+.gd-paints { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.gd-paint {
+  width: 15px; height: 15px; flex: none; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .18);
+  transition: transform .12s, box-shadow .12s;
 }
+.gd-paint:hover { transform: translateY(-2px); box-shadow: 0 0 8px rgba(255, 255, 255, .3); }
+.gd-paint.on { box-shadow: 0 0 0 1px var(--cyan), 0 0 10px rgba(33, 244, 255, .5); }
+.gd-reset {
+  padding: 2px 6px; cursor: pointer;
+  font-family: var(--mono); font-size: 7px; letter-spacing: .08em; color: #7f96ae;
+  background: rgba(10, 16, 32, .7); border: 1px solid rgba(130, 190, 255, .16);
+}
+.gd-reset.on { color: #dff8ff; border-color: rgba(139, 229, 255, .5); }
+.gd-more, .gd-keys {
+  font-family: var(--mono); font-size: 7px; letter-spacing: .1em; color: #45607a;
+}
+.gd-more { text-decoration: none; color: #4b8299; }
+.gd-more:hover { color: var(--cyan); }
+.gd-keys b { color: #9fe6ff; font-weight: 500; margin-right: 4px; }
+
+/* the split picker costs a row, so the key legend steps aside */
+body.mode-2p .menu-controls { display: none; }
+
+/* the menu now sends both humans to the garage instead of picking inline */
+.garage-enter {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+.garage-enter:hover { border-color: rgba(33, 244, 255, .5); background: rgba(14, 26, 44, .7); }
+.ge-side { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.ge-side b {
+  flex: none; padding: 2px 6px; font-family: var(--mono); font-size: 8px; font-weight: 700;
+  letter-spacing: .14em; color: #041018; background: var(--cyan);
+}
+.ge-side.alt b { background: var(--pink); color: #1a0310; }
+.ge-side em {
+  font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #eef8ff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ge-mid {
+  font-family: var(--mono); font-size: 8px; letter-spacing: .14em; color: #7f96ae;
+  display: flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.garage-enter:hover .ge-mid { color: var(--cyan); }
+.garage-enter:hover .ge-mid i { animation: nudge .6s infinite alternate; }
+
+/* ---- split garage page (cars.html?mode=2p) ------------------------------ */
+.g-dual[hidden] { display: none; }
+.g-dual {
+  position: fixed; inset: 0; z-index: 4;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 24px; padding: 92px 30px 104px;
+  pointer-events: none;
+}
+.g-dual-divider {
+  position: absolute; left: 50%; top: 96px; bottom: 118px; width: 1px; transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(33, 244, 255, 0), rgba(33, 244, 255, .45) 18%, rgba(255, 45, 141, .45) 82%, rgba(255, 45, 141, 0));
+  box-shadow: 0 0 18px rgba(33, 244, 255, .22);
+}
+.g-dual .gd-half {
+  pointer-events: auto;
+  width: 34%; max-width: 340px; gap: 9px;
+  padding: 12px 13px 11px;
+  background: rgba(6, 11, 24, .82);
+  border: 1px solid rgba(130, 190, 255, .14);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+  backdrop-filter: blur(6px);
+}
+.g-dual .gd-head b { font-size: 15px; }
+.g-dual .gd-head em { font-size: 9px; }
+.g-dual .gd-tag { font-size: 9px; padding: 3px 9px; }
+.g-dual .gd-dot { width: 11px; height: 11px; }
+.g-dual .gd-cars { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.g-dual .gd-car { padding: 8px 6px 7px; gap: 5px; }
+.g-dual .gd-car i { height: 4px; }
+.g-dual .gd-car span { font-size: 9px; }
+.g-dual .gd-paints { gap: 6px; }
+.g-dual .gd-paint { width: 20px; height: 20px; }
+.g-dual .gd-reset { font-size: 9px; padding: 3px 8px; }
+.g-dual .gd-keys { font-size: 8px; line-height: 1.5; }
+.g-dual .gd-pick {
+  display: flex; align-items: center; gap: 5px; cursor: pointer;
+  font-family: var(--mono); font-size: 8px; letter-spacing: .08em; color: #6f869e;
+  padding: 3px 6px; border: 1px solid rgba(130, 190, 255, .16); background: rgba(10, 16, 32, .7);
+}
+.g-dual .gd-pick.on { color: #dff8ff; border-color: rgba(139, 229, 255, .5); }
+.g-dual .gd-pick input {
+  width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer;
+}
+.g-dual .gd-half.p2 .gd-car.on { border-color: rgba(255, 45, 141, .8); background: rgba(255, 45, 141, .13); }
+
+/* in the two-player garage the single-player panels step aside */
+body.garage-2p .g-list,
+body.garage-2p .g-paint,
+body.garage-2p .g-hero,
+body.garage-2p .g-count { display: none; }
+body.garage-2p .g-title h1 { font-size: 26px; }
+
 
 /* during a split race the single-player panels step aside */
 body.dual .hud-top, body.dual .standings,
