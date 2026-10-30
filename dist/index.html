@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#05060f" />
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-<title>NEON RIDGE · 霓虹山道</title>
+<title>NEON RIDGE 霓虹山道</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -108,6 +108,31 @@
   <div id="startFlash" class="start-flash"></div>
 </div>
 
+<!-- ======================= SPLIT HUD (2 PLAYERS) ===================== -->
+<div id="hud2" class="hud2 hidden">
+  <div class="p2p-panel" data-p="0">
+    <span class="p2p-tag">P1</span>
+    <div class="p2p-pos"><b data-f="pos">1</b><i>/<span data-f="field">8</span></i></div>
+    <div class="p2p-lap">LAP <b data-f="lap">1</b><i>/3</i></div>
+    <div class="p2p-time" data-f="time">00:00.000</div>
+    <div class="p2p-speed"><b data-f="speed">000</b><small>KM/H</small></div>
+    <div class="p2p-nitro"><i data-f="nitro"></i></div>
+    <div class="p2p-warn" data-f="warn">逆行 · WRONG WAY</div>
+    <canvas class="p2p-map" width="132" height="132" data-f="map"></canvas>
+  </div>
+  <div class="p2p-panel" data-p="1">
+    <span class="p2p-tag alt">P2</span>
+    <div class="p2p-pos"><b data-f="pos">1</b><i>/<span data-f="field">8</span></i></div>
+    <div class="p2p-lap">LAP <b data-f="lap">1</b><i>/3</i></div>
+    <div class="p2p-time" data-f="time">00:00.000</div>
+    <div class="p2p-speed"><b data-f="speed">000</b><small>KM/H</small></div>
+    <div class="p2p-nitro"><i data-f="nitro"></i></div>
+    <div class="p2p-warn" data-f="warn">逆行 · WRONG WAY</div>
+    <canvas class="p2p-map" width="132" height="132" data-f="map"></canvas>
+  </div>
+  <div class="p2p-split"></div>
+</div>
+
 <!-- ============================== MENU ============================== -->
 <div id="menu" class="screen menu-screen">
   <div class="menu-vignette"></div>
@@ -127,6 +152,17 @@
     </div>
 
     <div class="race-setup">
+      <div class="setup-group mode-group">
+        <div class="mode-row" id="modeRow">
+          <span class="mode-label">模式</span>
+          <button class="mode-btn on" type="button" data-mode="1p">单人挑战<em>SOLO</em></button>
+          <button class="mode-btn" type="button" data-mode="2p">双人分屏<em>SPLIT</em></button>
+          <span class="mode-label diff-label">难度</span>
+          <button class="mode-btn diff-btn" type="button" data-diff="easy">轻松<em>EASY</em></button>
+          <button class="mode-btn diff-btn on" type="button" data-diff="normal">标准<em>NORMAL</em></button>
+          <button class="mode-btn diff-btn" type="button" data-diff="hard">困难<em>HARD</em></button>
+        </div>
+      </div>
       <div class="setup-group">
         <div class="setup-head"><span>CIRCUIT · 赛道</span><b id="setupTrack">NEON RIDGE</b></div>
         <div class="option-row" id="trackOptions"></div>
@@ -142,6 +178,11 @@
           </span>
           <span class="garage-cta">更换赛车 / 车漆 <i>→</i></span>
         </a>
+      </div>
+      <div class="setup-group p2-group" id="p2Group">
+        <div class="setup-head"><span>P2 · 赛车</span><b id="setupCar2">R8 V10</b></div>
+        <div class="option-row" id="carOptions2"></div>
+        <div class="p2-keys"><b>P2</b> ↑↓←→ 驾驶 · ENTER 漂移 · 右 SHIFT 氮气 · BACKSPACE 复位</div>
       </div>
     </div>
 
@@ -214,6 +255,8 @@
       <div class="result-stat"><span class="micro">DRIFT CHARGE</span><strong><span id="resultDrift">0</span><em>M</em></strong></div>
     </div>
 
+    <div class="result-dual hidden" id="resultDual"></div>
+
     <div class="result-table" id="resultTable"></div>
 
     <div class="result-actions">
@@ -247,14 +290,18 @@
 <script src="vendor/GLTFLoader.js"></script>
 <script src="js/util.js"></script>
 <script src="js/world.js"></script>
-<script src="js/car-model.js"></script>
-<script src="js/car-model-lambo.js"></script>
-<script src="js/car-model-temerario.js"></script>
-<script src="js/car-model-gtr.js"></script>
-<script src="js/car-model-r8.js"></script>
-<script src="js/car-model-f12.js"></script>
-<script src="js/car-model-mclaren.js"></script>
-<script src="js/car-model-veyron.js"></script>
+<script>
+  /* Opened from disk (file://) the page cannot fetch the .glb, so the base64
+     copies are injected here. Over http(s) they are skipped: js/car-body.js
+     streams assets/car/*.glb instead, which is a third smaller. */
+  if (location.protocol === 'file:') {
+    ['car-model', 'car-model-lambo', 'car-model-temerario', 'car-model-gtr',
+     'car-model-r8', 'car-model-f12', 'car-model-mclaren', 'car-model-veyron'
+    ].forEach(function (name) {
+      document.write('<script src="js/' + name + '.js"><\/script>');
+    });
+  }
+</script>
 <script src="js/car-body.js"></script>
 <script src="js/car.js"></script>
 <script src="js/audio.js"></script>

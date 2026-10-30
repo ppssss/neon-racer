@@ -24,16 +24,17 @@
      pair first) so the game can steer and spin them; `yaw` flips a model whose
      glb faces +Z after the shell's own half turn (see createCarModel). */
   const SPECS = {
-    ferrari: { wheelDir: -1, length: 0, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    lambo: { wheelDir: 1, length: 4.95, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    temerario: { wheelDir: 1, length: 4.72, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    gtr: { wheelDir: 1, length: 4.7, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    r8: { wheelDir: 1, length: 4.43, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    f12: { wheelDir: 1, length: 4.63, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
-    mclaren: { wheelDir: 1, length: 4.35, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    ferrari: { glb: 'ferrari.glb', wheelDir: -1, length: 0, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    lambo: { glb: 'lambo-revuelto.glb', wheelDir: 1, length: 4.95, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    temerario: { glb: 'temerario.glb', wheelDir: 1, length: 4.72, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    gtr: { glb: 'gtr.glb', wheelDir: 1, length: 4.7, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    r8: { glb: 'r8.glb', wheelDir: 1, length: 4.43, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    f12: { glb: 'f12.glb', wheelDir: 1, length: 4.63, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
+    mclaren: { glb: 'mclaren.glb', wheelDir: 1, length: 4.35, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
     // single merged mesh, no wheel nodes: the wheels ride along without spinning
-    veyron: { wheelDir: 1, length: 4.7, yaw: Math.PI }
+    veyron: { glb: 'veyron.glb', wheelDir: 1, length: 4.7, yaw: Math.PI }
   };
+  const ASSET_DIR = 'assets/car/';
 
   /* glTF material name -> the material this game paints it with. Everything
      not listed keeps whatever the exporter gave it (carbon, grilles, rubber,
@@ -90,28 +91,52 @@
     return bytes.buffer;
   }
 
+  /* Where the models come from:
+     - opened from disk (file://) fetch() cannot read local files, so the
+       base64 copies in js/car-model*.js are injected by index.html / cars.html
+       and parsed here;
+     - over http(s) the .glb is streamed from assets/car/ instead. That is a
+       quarter smaller than base64, decodes while downloading and gets cached
+       by the browser/CDN, which is what makes the web build load quickly. */
+  function parseEmbedded(key, b64, done) {
+    try {
+      new THREE.GLTFLoader().parse(base64ToBuffer(b64), '', (gltf) => {
+        templates[key] = gltf.scene;
+        done();
+      }, (err) => {
+        console.error('NEON RIDGE: could not parse car model "' + key + '"', err);
+        done();
+      });
+    } catch (err) {
+      console.error('NEON RIDGE: could not read car model "' + key + '"', err);
+      done();
+    }
+  }
+
   (function loadTemplates() {
-    const keys = Object.keys(sources);
-    if (!keys.length || !THREE.GLTFLoader) {
-      console.error('NEON RIDGE: car model data or GLTFLoader missing');
+    if (!THREE.GLTFLoader) {
+      console.error('NEON RIDGE: GLTFLoader missing');
       release();
       return;
     }
+    const keys = Object.keys(SPECS);
     let left = keys.length;
+    if (!left) { release(); return; }
     const done = () => { if (--left === 0) release(); };
     for (const key of keys) {
-      try {
-        new THREE.GLTFLoader().parse(base64ToBuffer(sources[key]), '', (gltf) => {
-          templates[key] = gltf.scene;
-          done();
-        }, (err) => {
-          console.error('NEON RIDGE: could not parse car model "' + key + '"', err);
-          done();
-        });
-      } catch (err) {
-        console.error('NEON RIDGE: could not read car model "' + key + '"', err);
-        done();
+      const embedded = sources[key];
+      if (embedded) {
+        parseEmbedded(key, embedded, done);
+        continue;
       }
+      const file = ASSET_DIR + SPECS[key].glb;
+      new THREE.GLTFLoader().load(file, (gltf) => {
+        templates[key] = gltf.scene;
+        done();
+      }, undefined, (err) => {
+        console.error('NEON RIDGE: could not load ' + file, err);
+        done();
+      });
     }
   })();
 
@@ -181,7 +206,7 @@
     // Fall back only if that model does not exist at all - templates are parsed
     // asynchronously (a 4 MB glb takes a moment), so a model that is merely
     // still parsing must keep its own key and attach when `ready` resolves.
-    const known = templates[requested] || sources[requested];
+    const known = templates[requested] || sources[requested] || SPECS[requested];
     const modelKey = known ? requested
       : (templates.ferrari ? 'ferrari' : (Object.keys(templates)[0] || Object.keys(sources)[0] || requested));
     const spec = SPECS[modelKey] || {};

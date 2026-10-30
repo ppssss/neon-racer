@@ -64,6 +64,38 @@
   };
   const CAR_ORDER = ['mira', 'revuelto', 'temerario', 'gtr', 'r8', 'f12', 'mclaren', 'veyron'];
 
+  /* How hard the field pushes. `pace` scales the AI car's top speed and
+     acceleration, `floor` is the slowest fraction of top speed they will
+     carry into a corner, `cornerDrag` / `offLineDrag` scale how much they
+     lift for bends and for being off the ideal line, `nitroMin` is how much
+     nitro they insist on before boosting, and `mercy` / `catchup` are the
+     rubber band: how much they ease off when ahead, and how hard they chase
+     when behind. `spread` is the gap between the best and worst AI. */
+  const DIFFICULTY = {
+    easy: {
+      id: 'easy', name: '轻松', tag: 'EASY',
+      blurb: '对手会稍稍放慢，适合先熟悉赛道。',
+      pace: .97, floor: .33, cornerDrag: 1.10, offLineDrag: 1.10,
+      nitroMin: 55, boostCurve: .0025, boostCurve2: .004,
+      mercy: .10, catchup: .03, spread: .011
+    },
+    normal: {
+      id: 'normal', name: '标准', tag: 'NORMAL',
+      blurb: '弯里会咬住你，直道上各凭本事。',
+      pace: 1.05, floor: .40, cornerDrag: .92, offLineDrag: .95,
+      nitroMin: 30, boostCurve: .005, boostCurve2: .006,
+      mercy: .06, catchup: .08, spread: .014
+    },
+    hard:{
+      id: 'hard', name: '困难', tag: 'HARD',
+      blurb: '极速更高、几乎不让车，氮气用得比你还狠。',
+      pace: 2, floor: .45, cornerDrag: .80, offLineDrag: .85,
+      nitroMin: 14, boostCurve: .008, boostCurve2: .009,
+      mercy: .02, catchup: .12, spread: .016
+    }
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+
   /* ======================================================================== */
   class Racer {
     constructor(game, data, isPlayer, opts) {
@@ -351,6 +383,7 @@
       this.baseLane = opts.lane;
       this.phase = opts.phase || 0;
       this.skill = opts.skill || 1;
+      this.diff = opts.diff || DIFFICULTY.normal;
       this.steer = 0;
       this.targetLane = opts.lane;
       this.laneTimer = 0;
@@ -360,11 +393,27 @@
       this.boost = false;
     }
 
+    /* the human this car should pace itself against */
+    paceRef() {
+      const g = this.racer.game;
+      if (!g) return null;
+      const humans = (g.players && g.players.length) ? g.players : (g.player ? [g.player] : null);
+      if (!humans) return null;
+      let ref = null, best = Infinity;
+      for (const p of humans) {
+        if (!p) continue;
+        const d = Math.abs(this.racer.raceDistance - p.raceDistance);
+        if (d < best) { best = d; ref = p; }
+      }
+      return ref;
+    }
+
     update(dt, time) {
       const r = this.racer;
       const track = r.track;
       const info = r.info;
       if (!info) return;
+      const df = this.diff;
       const speed = Math.abs(r.speed);
       const look = 10 + speed * .5;
       const ahead = track.at(info.s + look);
@@ -396,14 +445,17 @@
       this.steer = damp(this.steer, steerTarget, 7.5, dt);
 
       let targetSpeed = r.maxSpeed * this.skill;
-      targetSpeed *= clamp(1 - (curve * .72 + curve2 * .4) * 48, .35, 1);
-      targetSpeed *= clamp(1 - Math.abs(diff) * .85, .42, 1);
+      const bend = (curve * .72 + curve2 * .4) * 48 * df.cornerDrag;
+      targetSpeed *= clamp(1 - bend, df.floor, 1);
+      targetSpeed *= clamp(1 - Math.abs(diff) * .85 * df.offLineDrag, .42, 1);
       if (r.offroad) targetSpeed *= .5;
-      // gentle rubber-band, keeps the pack close without cheating
-      const player = r.game.player;
-      if (player) {
-        const gap = r.raceDistance - player.raceDistance;
-        targetSpeed *= 1 + clamp(gap / 900, -.045, .075);
+      // rubber band: ease off when clearly ahead, push hard when behind.
+      // (this used to be inverted - a trailing car was slowed down, which is
+      // exactly how the field drifted away from the player)
+      const ref = this.paceRef();
+      if (ref) {
+        const gap = clamp((r.raceDistance - ref.raceDistance) / 900, -1, 1);
+        targetSpeed *= 1 + (gap > 0 ? -gap * df.mercy : -gap * df.catchup);
       }
       // final lap push
       if (r.completedLaps >= r.track.lapCount - 1) targetSpeed *= 1.025;
@@ -411,8 +463,8 @@
       this.throttle = speed < targetSpeed ? 1 : (speed < targetSpeed + 2.5 ? .35 : 0);
       this.brake = speed > targetSpeed + 3.4 ? .8 : 0;
       this.drift = curve > .018 && speed > 23 && Math.abs(diff) > .2;
-      this.boost = curve < .003 && curve2 < .005 && speed > 18 && r.nitro > 38 &&
-        (r.completedLaps >= 1 || time > 8);
+      this.boost = curve < df.boostCurve && curve2 < df.boostCurve2 && speed > 18 &&
+        r.nitro > df.nitroMin && (r.completedLaps >= 1 || time > 8);
 
       r.update(dt, {
         throttle: this.throttle,
@@ -424,6 +476,8 @@
     }
   }
 
+  NR.DIFFICULTY = DIFFICULTY;
+  NR.DIFFICULTY_ORDER = DIFFICULTY_ORDER;
   NR.CAR_DATA = CAR_DATA;
   NR.CAR_ORDER = CAR_ORDER;
   NR.Racer = Racer;

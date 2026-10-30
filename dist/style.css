@@ -433,10 +433,12 @@ kbd {
 
 /* race setup — circuit & machine pickers ---------------------------------- */
 .race-setup {
-  display: flex; gap: 22px;
+  display: flex; flex-wrap: wrap; gap: 16px 20px;
   margin-bottom: clamp(18px, 3vh, 26px);
   animation: fadeUp .8s .6s both;
 }
+/* the mode switch owns a full row of its own, the three pickers share the next */
+.race-setup > .setup-group:first-child { flex: 1 1 100%; }
 .setup-group { flex: 1; min-width: 0; }
 .setup-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
@@ -1029,3 +1031,135 @@ body.garage-page {
   .g-stats { display: none; }
   .g-foot { display: none; }
 }
+
+/* ==========================================================================
+   MODE SWITCH (menu) + SPLIT-SCREEN HUD
+   ========================================================================== */
+.mode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mode-btn {
+  flex: 0 1 132px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; cursor: pointer; text-align: left;
+  font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #7f96ae;
+  background: rgba(8, 14, 30, .55);
+  border: 1px solid rgba(130, 190, 255, .13);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%);
+  transition: color .18s, border-color .18s, background .18s;
+}
+.diff-btn { flex: 0 1 96px; }
+.diff-label { margin-left: 10px; }
+.p2-keys b { color: #9fe6ff; font-weight: 500; margin-right: 4px; }
+.mode-label {
+  font-family: var(--mono); font-size: 7px; letter-spacing: .2em; color: #4b647e;
+  margin-right: 2px;
+}
+/* P2 picker gets its own full row so the track cards keep their width */
+#p2Group { flex: 1 1 100%; }
+.mode-hint {
+  margin-left: auto; font-family: var(--mono); font-size: 8px; letter-spacing: .12em;
+  color: #45607a; transition: opacity .2s;
+}
+body:not(.mode-2p) .mode-hint { opacity: 0; }
+.mode-btn em { font-style: normal; font-family: var(--mono); font-size: 7px; letter-spacing: .16em; color: #45607a; }
+.mode-btn:hover { color: #d8f4ff; border-color: rgba(139, 229, 255, .45); }
+.mode-btn.on {
+  color: #f2fdff; border-color: rgba(33, 244, 255, .7);
+  background: linear-gradient(150deg, rgba(33, 244, 255, .16), rgba(255, 45, 141, .08) 70%, rgba(8, 14, 30, .5));
+}
+.mode-btn.on em { color: var(--cyan); }
+
+#p2Group { display: none; }
+body.mode-2p #p2Group { display: block; }
+#carOptions2 { display: flex; gap: 5px; }
+.p2-card {
+  flex: 1 1 0; min-width: 0; padding: 6px 4px 5px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: rgba(8, 14, 30, .5);
+  border: 1px solid rgba(130, 190, 255, .13);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.p2-card i { display: block; width: 100%; height: 3px; }
+.p2-card span { font-family: var(--mono); font-size: 7px; letter-spacing: .04em; color: #7f96ae; white-space: nowrap; }
+.p2-card:hover { border-color: rgba(139, 229, 255, .45); transform: translateY(-1px); }
+.p2-card.on { border-color: rgba(255, 45, 141, .8); background: rgba(255, 45, 141, .12); }
+.p2-card.on span { color: #ffd0e3; }
+.p2-keys {
+  margin-top: 6px; font-family: var(--mono); font-size: 7px; letter-spacing: .08em;
+  color: #4b647e; line-height: 1.9;
+}
+.p2-keys kbd {
+  padding: 1px 4px; font-size: 7px; color: #9fe6ff;
+  border: 1px solid rgba(130, 190, 255, .2); background: rgba(10, 16, 32, .7);
+}
+
+/* during a split race the single-player panels step aside */
+body.dual .hud-top, body.dual .standings,
+body.dual .timing-panel, body.dual .right-cluster,
+body.dual .drift-badge, body.dual #wrongWay { display: none; }
+/* keep .hud-bottom alive: the shared race message lives inside it */
+body.dual .hud-buttons {
+  top: auto; bottom: 16px; right: 50%; transform: translateX(50%);
+  z-index: 23;
+}
+/* the shared message floats above both minimaps and the relocated buttons */
+body.dual .center-readout { bottom: 172px; }
+
+.hud2 { position: fixed; inset: 0; z-index: 21; pointer-events: none; }
+.p2p-panel { position: absolute; top: 0; bottom: 0; width: 50%; overflow: hidden; }
+.p2p-panel[data-p="0"] { left: 0; }
+.p2p-panel[data-p="1"] { left: 50%; }
+.p2p-split {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+  background: linear-gradient(180deg, rgba(33, 244, 255, 0) 0%, rgba(33, 244, 255, .42) 14%, rgba(33, 244, 255, .42) 86%, rgba(33, 244, 255, 0) 100%);
+}
+.p2p-tag {
+  position: absolute; left: 16px; top: 14px;
+  padding: 3px 9px; font-family: var(--mono); font-size: 9px; letter-spacing: .18em; font-weight: 700;
+  color: #041018; background: var(--cyan);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+.p2p-tag.alt { background: var(--pink); color: #1a0310; }
+.p2p-pos { position: absolute; left: 16px; top: 40px; display: flex; align-items: baseline; gap: 2px; }
+.p2p-pos b { font-family: var(--mono); font-size: 30px; line-height: 1; color: #eef8ff; }
+.p2p-pos i { font-style: normal; font-family: var(--mono); font-size: 10px; color: #4b647e; }
+.p2p-lap {
+  position: absolute; right: 16px; top: 14px;
+  font-family: var(--mono); font-size: 8px; letter-spacing: .18em; color: #4b647e;
+}
+.p2p-lap b { font-size: 13px; color: #dff8ff; }
+.p2p-lap i { font-style: normal; }
+.p2p-time { position: absolute; right: 16px; top: 34px; font-family: var(--mono); font-size: 11px; color: #9fe6ff; }
+.p2p-speed { position: absolute; left: 16px; bottom: 16px; display: flex; align-items: baseline; gap: 5px; }
+.p2p-speed b {
+  font-family: var(--mono); font-size: 34px; font-weight: 800; line-height: 1;
+  color: #fff; text-shadow: 0 0 18px rgba(33, 244, 255, .45);
+}
+.p2p-speed small { font-family: var(--mono); font-size: 7px; letter-spacing: .18em; color: #4b647e; }
+.p2p-nitro { position: absolute; left: 16px; bottom: 60px; width: 112px; height: 3px; background: rgba(150, 190, 230, .18); }
+.p2p-nitro i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--cyan), var(--acid)); transition: width .12s; }
+.p2p-map { position: absolute; right: 14px; bottom: 14px; width: 132px; height: 132px; opacity: .92; }
+.p2p-warn {
+  display: none; position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%);
+  padding: 5px 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+  color: #fff; background: rgba(255, 45, 141, .82);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.p2p-warn.on { display: block; animation: nudge .6s infinite alternate; }
+.result-dual { display: flex; gap: 8px; margin-bottom: 12px; }
+.result-dual div {
+  flex: 1; padding: 8px 10px; font-family: var(--mono); font-size: 8px; letter-spacing: .1em; color: #7e92ad;
+  background: rgba(8, 14, 30, .5); border: 1px solid rgba(130, 190, 255, .13);
+}
+.result-dual b { display: block; font-size: 15px; color: #eef8ff; margin: 2px 0; letter-spacing: .02em; }
+.result-dual span { color: #9fe6ff; }
+
+@media (max-width: 900px) {
+  .p2p-map { width: 92px; height: 92px; }
+  .p2p-speed b { font-size: 26px; }
+  .p2p-pos b { font-size: 24px; }
+}
+
+/* the shared countdown would otherwise straddle the split at full size */
+body.dual .countdown { top: 34%; }
+body.dual .countdown-num { font-size: clamp(72px, 9vw, 128px); }
+body.dual .countdown-sub { margin-top: 8px; font-size: 8px; }

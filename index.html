@@ -290,14 +290,18 @@
 <script src="vendor/GLTFLoader.js"></script>
 <script src="js/util.js"></script>
 <script src="js/world.js"></script>
-<script src="js/car-model.js"></script>
-<script src="js/car-model-lambo.js"></script>
-<script src="js/car-model-temerario.js"></script>
-<script src="js/car-model-gtr.js"></script>
-<script src="js/car-model-r8.js"></script>
-<script src="js/car-model-f12.js"></script>
-<script src="js/car-model-mclaren.js"></script>
-<script src="js/car-model-veyron.js"></script>
+<script>
+  /* Opened from disk (file://) the page cannot fetch the .glb, so the base64
+     copies are injected here. Over http(s) they are skipped: js/car-body.js
+     streams assets/car/*.glb instead, which is a third smaller. */
+  if (location.protocol === 'file:') {
+    ['car-model', 'car-model-lambo', 'car-model-temerario', 'car-model-gtr',
+     'car-model-r8', 'car-model-f12', 'car-model-mclaren', 'car-model-veyron'
+    ].forEach(function (name) {
+      document.write('<script src="js/' + name + '.js"><\/script>');
+    });
+  }
+</script>
 <script src="js/car-body.js"></script>
 <script src="js/car.js"></script>
 <script src="js/audio.js"></script>
