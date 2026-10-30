@@ -86,7 +86,7 @@
       nitroMin: 30, boostCurve: .005, boostCurve2: .006,
       mercy: .06, catchup: .08, spread: .014
     },
-    hard: {
+    hard:{
       id: 'hard', name: '困难', tag: 'HARD',
       blurb: '极速更高、几乎不让车，氮气用得比你还狠。',
       pace: 2, floor: .45, cornerDrag: .80, offLineDrag: .85,
