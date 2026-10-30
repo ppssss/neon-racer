@@ -24,7 +24,7 @@
      pair first) so the game can steer and spin them; `yaw` flips a model whose
      glb faces +Z after the shell's own half turn (see createCarModel). */
   const SPECS = {
-    ferrari: { wheelDir: -1, length: 0, wheels: ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'] },
+    ferrari: { wheelDir: -1, length: 0, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
     lambo: { wheelDir: 1, length: 4.95, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
     temerario: { wheelDir: 1, length: 4.72, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },
     gtr: { wheelDir: 1, length: 4.7, yaw: Math.PI, wheels: ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] },

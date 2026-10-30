@@ -34,6 +34,7 @@ import {
   textureCompress, transformPrimitive, weld
 } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
+import draco3d from 'draco3d';
 import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
@@ -70,6 +71,23 @@ const CARS = {
     wheelByName: { prefixes: ['tyre', 'rims 1'] },
     bodySimplify: { ratio: 0.5, error: 0.0008 },
     wheelSimplify: { ratio: 0.5, error: 0.004 },
+    textureSize: 256,
+    textureQuality: 80
+  },
+  // the three.js sample car, rebuilt *with* its interior: the old ferrari.glb
+  // had seats/dash/steering stripped, which left MIRA looking like an empty shell
+  ferrari: {
+    src: 'assets/car/source/ferrari/ferrari-source.glb',
+    out: 'assets/car/ferrari.glb',
+    scale: 1,
+    wheels: {
+      wheel_fl: 'Wheel_FL', wheel_fr: 'Wheel_FR',
+      wheel_rl: 'Wheel_RL', wheel_rr: 'Wheel_RR'
+    },
+    // the cabin is only ever seen through tinted glass, so it can be crushed
+    materialSimplify: { Leather: 0.16, Leather_red: 0.16, Carpet: 0.16, Interior_dark: 0.16, Interior_light: 0.16 },
+    bodySimplify: { ratio: 0.34, error: 0.004, lockBorder: false },
+    wheelSimplify: { ratio: 0.55, error: 0.004, lockBorder: false },
     textureSize: 256,
     textureQuality: 80
   },
@@ -206,6 +224,7 @@ function computeSmoothNormals(doc) {
 
 await MeshoptSimplifier.ready;
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+io.registerDependencies({ 'draco3d.decoder': await draco3d.createDecoderModule() });
 
 for (const key of (process.argv[2] === 'all' ? Object.keys(CARS) : [process.argv[2]])) {
   const cfg = CARS[key];
@@ -216,6 +235,12 @@ for (const key of (process.argv[2] === 'all' ? Object.keys(CARS) : [process.argv
   const root = doc.getRoot();
   const scene = root.getDefaultScene() || root.listScenes()[0];
   const modelRoot = scene.listChildren().length === 1 ? scene.listChildren()[0] : null;
+
+  // the source may be Draco-compressed; the game has no DRACOLoader, so the
+  // extension must not survive into the output
+  for (const ext of root.listExtensionsUsed()) {
+    if (ext.extensionName === 'KHR_draco_mesh_compression') ext.dispose();
+  }
 
   const countTris = () => root.listMeshes().reduce((n, m) =>
     n + m.listPrimitives().reduce((s, p) => s + (p.getIndices() ? p.getIndices().getCount() / 3 : 0), 0), 0);
@@ -442,9 +467,13 @@ for (const key of (process.argv[2] === 'all' ? Object.keys(CARS) : [process.argv
     return false;
   };
   for (const mesh of root.listMeshes()) {
-    const opt = isWheelMesh(mesh) ? cfg.wheelSimplify : cfg.bodySimplify;
+    const base = isWheelMesh(mesh) ? cfg.wheelSimplify : cfg.bodySimplify;
     for (const prim of mesh.listPrimitives()) {
+      const matName = prim.getMaterial() ? prim.getMaterial().getName() : '';
+      const override = cfg.materialSimplify && cfg.materialSimplify[matName];
+      const opt = override ? Object.assign({}, base, { ratio: override }) : base;
       if (!prim.getIndices() || prim.getIndices().getCount() < 300) continue;
+      const before = prim.getIndices().getCount() / 3;
       try {
         simplifyPrimitive(prim, {
           simplifier: MeshoptSimplifier, ratio: opt.ratio, error: opt.error,
@@ -452,6 +481,10 @@ for (const key of (process.argv[2] === 'all' ? Object.keys(CARS) : [process.argv
         });
       } catch (e) {
         console.warn('simplify skipped:', e.message);
+      }
+      if (process.env.DEBUG) {
+        const after = prim.getIndices() ? prim.getIndices().getCount() / 3 : 0;
+        console.log('  ', (matName || '(none)').padEnd(18), Math.round(before), '->', Math.round(after), 'ratio', opt.ratio);
       }
     }
   }

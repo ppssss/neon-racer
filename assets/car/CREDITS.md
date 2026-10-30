@@ -41,18 +41,23 @@ Ferrari 458 Italia 模型。
 
 ## 本地做的处理
 
-`assets/car/source/ferrari/ferrari-source.glb` 是 three.js 原始文件（Draco 压缩，含内饰、无贴图）。
-为了在 `file://` 下直接运行并降低开销，用 `@gltf-transform/cli` 生成
-`assets/car/ferrari.glb`：
+`assets/car/ferrari/ferrari-source.glb` 是 three.js 原始文件（Draco 压缩、含完整内饰、无贴图）。
+`assets/car/ferrari.glb` 由 `tools/build-cars.mjs` 的 `ferrari` 配置生成：
 
-1. 解压 Draco；
-2. 删除内饰节点（座椅、地毯、方向盘等）；
-3. 去掉无用的 TEXCOORD；
-4. `weld` + `simplify --ratio 0.15`；
+1. 读入时解码 Draco，并把 `KHR_draco_mesh_compression` 扩展从文档里摘掉
+   （游戏只内置了 GLTFLoader，没有 DRACOLoader）；
+2. **保留内饰**（座椅 / 地毯 / 仪表 / 方向盘）—— 早期版本为了减面把内饰删了，
+   从车窗看进去是个空壳，所以又按源文件重建了一版；
+3. 把各节点世界矩阵烘进顶点，`wheel_fl/fr/rl/rr` 重命名为游戏约定的
+   `Wheel_FL/FR/RL/RR`（保留原法线，法线直接决定这个车模的面片质感）；
+4. 按材质合批 + `weld`，车身 `simplify 0.34`、车轮 `0.55`，总面数 35.9 万 → 31.2 万；
+   内饰只透过深色玻璃看，本来还想单独压到 0.16，但这台机器上 meshopt 受误差阈值限制
+   降不动（80k 面的车身也只掉 6%），就保持了原比例；
 5. `quantize`（KHR_mesh_quantization）。
 
 车身外观（几何轮廓、轮毂、灯的布局）未做改动；涂装、玻璃、轮圈颜色、底盘光晕与尾焰
-由游戏在运行时按其材质名替换。
+由游戏在运行时按其材质名替换。内饰材质（`Leather` / `Carpet` / `Interior_dark` …）
+不在替换表里，保留原生配色。
 
 ## lambo-revuelto.glb
 
